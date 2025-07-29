@@ -7,7 +7,9 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const compression = require('compression');
-const { logger } = require('./server/config/logger');
+const pinoHttp = require('pino-http');
+const logger = require('./server/logger');
+const { logger: oldLogger } = require('./server/config/logger');
 const inputRoutes = require('./server/routes/input');
 const { getCurrentConfig } = require('./server/config/environment');
 const realtimeService = require('./server/services/realtimeService');
@@ -26,6 +28,32 @@ const app = express();
 
 // Trust proxy for Nginx reverse proxy setup  
 app.set('trust proxy', 1);
+
+// Setup Pino HTTP logging middleware TOUT EN HAUT avec x-request-id
+app.use(pinoHttp({
+  logger,
+  genReqId: (req) => {
+    // Utiliser x-request-id existant ou en générer un nouveau
+    return req.headers['x-request-id'] || require('crypto').randomUUID();
+  },
+  customProps: (req) => ({
+    requestId: req.id
+  }),
+  customSuccessMessage: (req, res) => {
+    return `${req.method} ${req.url} completed`;
+  },
+  customErrorMessage: (req, res, err) => {
+    return `${req.method} ${req.url} errored: ${err.message}`;
+  }
+}));
+
+// Middleware pour propager x-request-id dans la réponse
+app.use((req, res, next) => {
+  if (req.id) {
+    res.setHeader('x-request-id', req.id);
+  }
+  next();
+});
 
 // Setup security middleware (CORS, rate limiting, headers)
 setupSecurity(app);
@@ -93,11 +121,11 @@ app.use('/static', express.static(path.join(__dirname, 'static')));
 
 // Handle video requests with custom middleware BEFORE Express static
 app.use('/static/cache/videos', (req, res, next) => {
-  console.log('Video request received for:', req.url);
+  req.log.info({ url: req.url }, 'Video request received');
   if (req.path.endsWith('.mp4')) {
     const filename = req.path.substring(1); // Remove leading slash
     req.params = { filename: filename };
-    console.log(`🎯 Video request intercepted: ${filename}`);
+    req.log.info({ filename }, 'Video request intercepted');
     return handleVideoRequest(req, res);
   }
   next();
@@ -132,7 +160,7 @@ app.get('/api/history', async (req, res) => {
     const [rows] = await pool.execute(query);
     res.json({ success: true, data: { items: rows } });
   } catch (error) {
-    console.error('History API error:', error);
+    req.log.error({ error: error.message, stack: error.stack }, 'History API error');
     res.status(500).json({ error: error.message });
   }
 });
@@ -170,42 +198,46 @@ wss.on('connection', (ws, req) => {
   }).length;
   
   if (currentConnections > 5) {
-    logger.warn(`🚨 Too many connections from ${clientIP}, closing new connection`);
+    logger.warn({ clientIP, currentConnections }, 'Too many WebSocket connections, closing new connection');
     ws.close(1008, 'Too many connections');
     return;
   }
   
-  logger.info(`🔌 New WebSocket connection from ${clientIP} (${currentConnections}/5)`);
+  logger.info({ clientIP, currentConnections, maxConnections: 5 }, 'New WebSocket connection established');
   realtimeService.addWebSocketClient(ws);
 });
 
 // Initialize realtime service
 realtimeService.initialize().catch(err => {
-  logger.error('❌ Failed to initialize realtime service:', err);
+  logger.error({ error: err.message, stack: err.stack }, 'Failed to initialize realtime service');
   process.exit(1);
 });
 
 // Graceful shutdown handling
 process.on('SIGTERM', async () => {
-  logger.info('🔄 Received SIGTERM, shutting down gracefully...');
+  logger.info('Received SIGTERM, shutting down gracefully');
   await realtimeService.shutdown();
   server.close(() => {
-    logger.info('✅ Server closed');
+    logger.info('Server closed gracefully');
     process.exit(0);
   });
 });
 
 process.on('SIGINT', async () => {
-  logger.info('🔄 Received SIGINT, shutting down gracefully...');
+  logger.info('Received SIGINT, shutting down gracefully');
   await realtimeService.shutdown();
   server.close(() => {
-    logger.info('✅ Server closed');
+    logger.info('Server closed gracefully');
     process.exit(0);
   });
 });
 
 // Start the server
 server.listen(PORT, HOST, () => {
-  logger.info(`✅ RFID Server with WebSocket started successfully on http://${HOST}:${PORT}`);
-  logger.info(`🔌 WebSocket endpoint available at ws://${HOST}:${PORT}/ws`);
+  logger.info({ 
+    host: HOST, 
+    port: PORT, 
+    websocketPath: '/ws',
+    env: process.env.NODE_ENV || 'development'
+  }, 'RFID Server with WebSocket started successfully');
 });
