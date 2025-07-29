@@ -9,7 +9,6 @@ const WebSocket = require('ws');
 const compression = require('compression');
 const pinoHttp = require('pino-http');
 const logger = require('./server/logger');
-const { logger: oldLogger } = require('./server/config/logger');
 const { register: metricsRegister } = require('./server/metrics');
 const inputRoutes = require('./server/routes/input');
 const { getCurrentConfig } = require('./server/config/environment');
@@ -25,10 +24,24 @@ const { setupSecurity } = require('./server/config/security');
 const { router: monitoringRoutes, monitoringService } = require('./server/routes/monitoring');
 const path = require('path');
 
+// Allowlist d'origines pour le WebSocket (CSWSH protection)
+const WS_ALLOWED_ORIGINS = (process.env.WS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// Limitation de connexions WebSocket par IP (configurable)
+const MAX_WS_PER_IP = Number(process.env.WS_MAX_PER_IP || 5);
+
+process.on('unhandledRejection', (reason) => logger.error({ reason }, 'unhandledRejection'));
+process.on('uncaughtException', (err) => { logger.error({ err }, 'uncaughtException'); process.exit(1); });
+
 const app = express();
 
 // Trust proxy for Nginx reverse proxy setup  
 app.set('trust proxy', 1);
+// Hide tech stack header (si pas déjà fait dans setupSecurity)
+app.disable('x-powered-by');
 
 // Setup Pino HTTP logging middleware TOUT EN HAUT avec x-request-id
 app.use(pinoHttp({
@@ -95,6 +108,10 @@ const server = http.createServer(app);
 const config = getCurrentConfig();
 const PORT = config.server.port || 3002;
 const HOST = config.server.host || '0.0.0.0';
+// Durcissement timeouts HTTP
+server.keepAliveTimeout = 65_000;
+server.headersTimeout   = 66_000;
+// server.requestTimeout   = 0; // optionnel : pas de timeout global
 
 // Initialize WebSocket server
 const wss = new WebSocket.Server({ 
@@ -102,6 +119,32 @@ const wss = new WebSocket.Server({
   path: '/ws',
   clientTracking: true
 });
+
+// Valider l'Origin dès l'upgrade HTTP → WS
+server.on('upgrade', (req, socket, head) => {
+  const origin = req.headers['origin'];
+  if (WS_ALLOWED_ORIGINS.length && (!origin || !WS_ALLOWED_ORIGINS.includes(origin))) {
+    try { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); } catch {}
+    try { socket.destroy(); } catch {}
+    logger.warn({ origin }, 'WS upgrade rejected (origin not allowed)');
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
+
+// Comptage des connexions par IP + heartbeat anti-zombies
+const ipConnections = new Map(); // ip => count
+function heartbeat() { this.isAlive = true; }
+const wsHeartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  });
+}, 30_000);
+wss.on('close', () => clearInterval(wsHeartbeatInterval));
 
 // Middleware to parse JSON and urlencoded data
 app.use(express.json({ limit: '50mb' }));
@@ -116,10 +159,18 @@ app.use('/api', inputRoutes);
 // Monitoring and health check routes
 app.use('/api/monitoring', monitoringRoutes);
 
+// Évite le bruit 404 pour le favicon
+app.get('/favicon.ico', (_req, res) => res.sendStatus(204));
+
 // Prometheus metrics endpoint
 app.get('/metrics', async (req, res) => {
   try {
+    const token = process.env.METRICS_TOKEN;
+    if (token && req.headers['authorization'] !== `Bearer ${token}`) {
+      return res.status(401).end('Unauthorized');
+    }
     res.set('Content-Type', metricsRegister.contentType);
+    res.set('Cache-Control', 'no-store'); // pas de cache pour les métriques
     const metrics = await metricsRegister.metrics();
     res.end(metrics);
   } catch (error) {
@@ -127,10 +178,6 @@ app.get('/metrics', async (req, res) => {
     res.status(500).end('Error generating metrics');
   }
 });
-
-// Static files - serve from build directory
-app.use(express.static(path.join(__dirname, 'build')));
-app.use('/static', express.static(path.join(__dirname, 'static')));
 
 // Handle video requests with custom middleware BEFORE Express static
 app.use('/static/cache/videos', (req, res, next) => {
@@ -143,6 +190,37 @@ app.use('/static/cache/videos', (req, res, next) => {
   }
   next();
 });
+
+// Static React build :
+// - /build/static/**  → cache long + immutable (assets fingerprintés)
+// - index.html        → no-store pour forcer la dernière version
+app.use(express.static(path.join(__dirname, 'build'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(path.sep + 'index.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+    } else if (filePath.includes(path.join('build', 'static') + path.sep)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+}));
+app.use('/static', express.static(path.join(__dirname, 'static'), {
+  maxAge: '365d',
+  immutable: true,
+}));
+
+// SPA fallback (ne touche pas /api, /static, /ws)
+app.get(/^\/(?!api\/|static\/|ws($|\/)).*/, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+});
+
+// Helper robuste pour récupérer/normaliser l'IP client
+function getClientIP(req) {
+  const xff = req.headers['x-forwarded-for'];
+  let ip = xff ? String(xff).split(',')[0].trim() : req.socket.remoteAddress;
+  if (ip && ip.startsWith('::ffff:')) ip = ip.slice(7); // IPv6-mapped IPv4
+  return ip;
+}
 
 // History endpoint from the original server
 app.get('/api/history', async (req, res) => {
@@ -189,6 +267,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Readiness check (ping DB)
+app.get('/api/ready', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    return res.json({ ready: true, timestamp: new Date().toISOString() });
+  } catch (err) {
+    req.log.error({ err: err.message }, 'Readiness failed');
+    return res.status(503).json({ ready: false, error: 'DB not reachable' });
+  }
+});
+
 // WebSocket status endpoint
 app.get('/api/ws/status', (req, res) => {
   const status = realtimeService.getStatus();
@@ -204,20 +293,44 @@ app.get('/api/ws/status', (req, res) => {
 
 // Handle WebSocket connections avec limite
 wss.on('connection', (ws, req) => {
-  // Limiter le nombre de connexions par IP
-  const clientIP = req.socket.remoteAddress || req.headers['x-forwarded-for'];
-  const currentConnections = Array.from(wss.clients).filter(client => {
-    return client.upgradeReq?.socket?.remoteAddress === clientIP;
-  }).length;
-  
-  if (currentConnections > 5) {
-    logger.warn({ clientIP, currentConnections }, 'Too many WebSocket connections, closing new connection');
-    ws.close(1008, 'Too many connections');
+  const ip = getClientIP(req);
+  const current = ipConnections.get(ip) || 0;
+  if (current >= MAX_WS_PER_IP) {
+    logger.warn({ ip, current, max: MAX_WS_PER_IP }, 'Too many WebSocket connections, closing new connection');
+    try { ws.close(1008, 'Too many connections'); } catch {}
     return;
   }
-  
-  logger.info({ clientIP, currentConnections, maxConnections: 5 }, 'New WebSocket connection established');
+  ipConnections.set(ip, current + 1);
+  ws._ip = ip;
+  ws.isAlive = true;
+  ws.on('pong', heartbeat);
+
+  logger.info({ ip, current: current + 1, max: MAX_WS_PER_IP }, 'New WebSocket connection established');
   realtimeService.addWebSocketClient(ws);
+
+  ws.on('error', (err) => {
+    logger.warn({ ip, err: err.message }, 'WebSocket error');
+  });
+
+  ws.on('close', () => {
+    const cnt = ipConnections.get(ip) || 1;
+    const next = cnt - 1;
+    if (next <= 0) ipConnections.delete(ip);
+    else ipConnections.set(ip, next);
+    logger.info({ ip, remaining: next }, 'WebSocket connection closed');
+  });
+});
+
+// 404 JSON uniforme pour /api/*
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
+
+// Error handler global (JSON + log)
+app.use((err, req, res, next) => {
+  req.log?.error({ err: err.message, stack: err.stack }, 'Unhandled error');
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
 // Initialize realtime service
@@ -226,24 +339,23 @@ realtimeService.initialize().catch(err => {
   process.exit(1);
 });
 
-// Graceful shutdown handling
-process.on('SIGTERM', async () => {
-  logger.info('Received SIGTERM, shutting down gracefully');
-  await realtimeService.shutdown();
+// Graceful shutdown handling (HTTP + WS)
+async function graceful() {
+  logger.info('Shutting down gracefully');
+  try { await realtimeService.shutdown(); } catch (e) {
+    logger.warn({ err: e?.message }, 'realtimeService shutdown warning');
+  }
+  try {
+    wss.clients.forEach((c) => { try { c.terminate(); } catch {} });
+    wss.close(() => logger.info('WebSocket server closed'));
+  } catch {}
   server.close(() => {
-    logger.info('Server closed gracefully');
+    logger.info('HTTP server closed');
     process.exit(0);
   });
-});
-
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, shutting down gracefully');
-  await realtimeService.shutdown();
-  server.close(() => {
-    logger.info('Server closed gracefully');
-    process.exit(0);
-  });
-});
+}
+process.on('SIGTERM', graceful);
+process.on('SIGINT', graceful);
 
 // Start the server
 server.listen(PORT, HOST, () => {
@@ -253,4 +365,12 @@ server.listen(PORT, HOST, () => {
     websocketPath: '/ws',
     env: process.env.NODE_ENV || 'development'
   }, 'RFID Server with WebSocket started successfully');
+});
+server.on('error', (err) => {
+  logger.error({ err: err.message, stack: err.stack }, 'HTTP server error');
+});
+// Malformed HTTP / client reset → éviter stack traces bruyantes
+server.on('clientError', (err, socket) => {
+  try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); } catch {}
+  logger.warn({ err: err.message }, 'clientError');
 });
