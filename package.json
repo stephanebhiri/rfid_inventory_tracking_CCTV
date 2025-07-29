@@ -38,7 +38,7 @@
     "test:api": "jest tests/ --testEnvironment=node",
     "test:coverage": "jest tests/ --testEnvironment=node --coverage",
     "eject": "react-scripts eject",
-    "server": "node server/index.js",
+    "server": "node main_web_server.js",
     "dev": "concurrently --kill-others-on-fail \"npm run server\" \"npm start\"",
     "dev:pretty": "NODE_ENV=development node main_web_server.js | pino-pretty",
     "logs:follow": "pm2 logs actinvent8-web-server --lines 100 -f",
