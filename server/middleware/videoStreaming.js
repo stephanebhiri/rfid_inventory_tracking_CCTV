@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 // Polyfill fetch pour compatibilité Node <18
+// Note: Pour Node <18, assurez-vous d'utiliser node-fetch@2 (CJS) car v3 est ESM-only
 const fetchFn = globalThis.fetch || require('node-fetch');
 const { videoMetadata } = require('../utils/videoTools');
 const { CCTV } = require('../config/constants');
@@ -71,9 +72,16 @@ async function handleVideoRequest(req, res) {
       return; // File served successfully
     }
     
-    // File doesn't exist, proceed with download
+    if (err.code && err.code !== 'ENOENT') {
+      console.error('sendFile error:', err);
+      return ApiResponse.internalError(res, 'File send error');
+    }
+    
+    // Cache miss ➜ lancer le download et capturer l'échec éventuel
     console.log(`📹 Cache miss for ${filename}, starting download...`);
-    handleVideoDownload(req, res, filename, cachePath);
+    handleVideoDownload(req, res, filename, cachePath).catch(e => {
+      if (!res.headersSent) ApiResponse.internalError(res, e);
+    });
   });
 }
 
@@ -84,15 +92,18 @@ async function handleVideoDownload(req, res, filename, cachePath) {
   if (existing) {
     try {
       await existing.promise;
+      return res.sendFile(cachePath, err => {
+        if (err) return ApiResponse.notFound(res, 'Video');
+      });
     } catch (e) {
       if (e?.code === 'VIDEO_NOT_FOUND') return ApiResponse.notFound(res, 'Video not found on CCTV server');
       if (e?.code === 'INVALID_CAMERA') return ApiResponse.notFound(res, 'Camera');
-      if (e?.name === 'AbortError') return; // client parti, on ne répond pas
-      return ApiResponse.serviceUnavailable(res, 'Video download failed');
+      if (e?.name !== 'AbortError') {
+        return ApiResponse.serviceUnavailable(res, 'Video download failed');
+      }
+      // e.name === 'AbortError' ➜ le 1er client est parti : on NE renvoie pas ici,
+      // on retombe dans le flux normal pour lancer un nouveau téléchargement.
     }
-    return res.sendFile(cachePath, err => {
-      if (err) return ApiResponse.notFound(res, 'Video');
-    });
   }
   
   // (4) Enregistrer la promesse AVANT tout await (source of truth)
@@ -103,7 +114,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
   // (5) Slot de téléchargement
   await downloadSemaphore.acquire();
   
-  let ac; // Déclaration hors du try pour accès dans catch
+  let ac, onClose; // Déclaration hors du try pour accès dans catch et finally
   try {
     // Extract camera ID and timestamp from filename
     const match = filename.match(/cam(\d+)_(\d+)_([a-f0-9]+)\.mp4/);
@@ -203,7 +214,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     // (6) Annuler si le client coupe
     ac = new AbortController();
-    const onClose = () => ac.abort();
+    onClose = () => ac.abort();
     req.on('close', onClose);
     
     const response = await fetchFn(`${url}?${params}`, { signal: ac.signal });
@@ -230,9 +241,6 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     await fsp.rename(tmp, cachePath);
     
     console.log(`💾 Video download completed: ${filename}`);
-    
-    // Retirer le listener si tout va bien
-    req.off?.('close', onClose);
     
     resolveDl();
     downloadPromises.delete(filename);
@@ -261,6 +269,8 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     return ApiResponse.internalError(res, error);
   } finally {
+    // Nettoyage systématique du listener
+    req.off?.('close', onClose);
     // Always release semaphore
     downloadSemaphore.release();
   }
