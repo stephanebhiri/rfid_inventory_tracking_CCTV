@@ -173,20 +173,194 @@ table.data-table-header thead {
 .modal-content { padding: 0; overflow: hidden; flex-grow: 1; }
 
 /* ===== CCTV & VIDEO PLAYER ===== */
-.cctv-window { display: flex; flex-direction: column; height: 100%; background-color: var(--color-background); }
-.cctv-header, .cctv-info { padding: var(--space-4); display: flex; justify-content: space-between; align-items: center; }
+.cctv-window { 
+  display: flex; 
+  flex-direction: column; 
+  min-height: 100vh; 
+  background-color: var(--color-background);
+  /* Clean layout without excess padding */
+  box-sizing: border-box;
+}
+.cctv-header, .cctv-info { 
+  padding: var(--space-3); 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 60px;
+  max-height: 80px;
+}
 .cctv-element-name { font-size: 1.1rem; font-weight: 500; }
 .cctv-status-line { font-size: 0.9rem; color: var(--color-text-secondary); }
-.cctv-cameras { flex-grow: 1; padding: var(--space-2); background-color: #000; }
-.video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-2); }
-.cctv-camera-slot { position: relative; background-color: #111; aspect-ratio: 16/9; border-radius: var(--border-radius-md); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.cctv-cameras { 
+  padding: var(--space-2); 
+  background-color: #000;
+  /* Balanced height - leaves room for sticky controls */
+  height: 55vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.video-grid { 
+  display: grid; 
+  grid-template-columns: repeat(3, 1fr); 
+  grid-template-rows: repeat(2, 1fr);
+  gap: var(--space-2);
+  /* Force stable grid size but allow overflow for controls */
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+.cctv-camera-slot { 
+  position: relative; 
+  background-color: #111; 
+  border-radius: var(--border-radius-md); 
+  overflow: hidden; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  /* Force stable size for 3x2 grid */
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  /* Maintain aspect ratio within fixed grid cell */
+  aspect-ratio: 16/9;
+}
 .video-player-video { width: 100%; height: 100%; object-fit: cover; }
 .cctv-camera-label { position: absolute; top: var(--space-2); left: var(--space-2); background-color: rgba(0,0,0,0.6); color: white; padding: var(--space-1) var(--space-2); font-size: 0.75rem; border-radius: var(--border-radius-sm); }
-.cctv-camera-status { color: var(--color-text-disabled); font-size: 0.9rem; }
+.cctv-camera-status { 
+  color: var(--color-text-disabled); 
+  font-size: 0.9rem;
+  /* Ensure status elements maintain container size */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  width: 90%;
+  z-index: 2;
+}
 .cctv-camera-status.error { color: var(--color-error); }
-.cctv-controls { padding: var(--space-3); background: var(--color-surface-alt); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.timeline-track { flex-grow: 1; accent-color: var(--color-primary); }
-.timeline-time, .timeline-current-indicator { font-family: var(--font-family-mono); font-size: 0.9rem; color: var(--color-primary); }
+.cctv-camera-status.loading { 
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cctv-controls { 
+  padding: var(--space-3); 
+  background: var(--color-surface-alt); 
+  border-top: 1px solid var(--color-border); 
+  display: flex; 
+  align-items: center; 
+  gap: var(--space-3); 
+  flex-wrap: wrap;
+  /* WORKING SOLUTION: sticky position keeps controls visible */
+  flex-shrink: 0;
+  min-height: 70px;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Controls layout fixes */
+.stack-horizontal {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.stack-gap-medium {
+  gap: var(--space-3);
+}
+
+.cctv-control-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cctv-control-button:hover {
+  background: var(--color-surface-alt);
+}
+.cctv-control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.timeline-track { 
+  flex: 1; 
+  min-width: 200px;
+  accent-color: var(--color-primary); 
+  margin: 0 var(--space-2);
+}
+.timeline-time, .timeline-current-indicator { 
+  font-family: var(--font-family-mono); 
+  font-size: 0.9rem; 
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+/* Video split container for dual view (timeline) */
+.video-split-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.video-split-header {
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.video-split-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  overflow: hidden;
+}
+.video-split-item {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.video-split-item h3 {
+  padding: var(--space-2);
+  margin: 0;
+  background: var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.video-split-item .cctv-window {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  min-height: auto;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+.video-split-item .cctv-cameras {
+  height: auto;
+  flex: 1;
+}
+.video-split-item .video-grid {
+  height: 100%;
+}
 
 /* ===== D3 TIMELINE ===== */
 .d3-timeline-container { flex-grow: 1; position: relative; background: var(--color-surface); }
