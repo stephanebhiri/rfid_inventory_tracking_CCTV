@@ -24,6 +24,9 @@ const path = require('path');
 
 const app = express();
 
+// Trust proxy for Nginx reverse proxy setup  
+app.set('trust proxy', 1);
+
 // Setup security middleware (CORS, rate limiting, headers)
 setupSecurity(app);
 
