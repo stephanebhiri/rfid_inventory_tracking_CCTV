@@ -7,9 +7,9 @@ A real-time RFID inventory tracking system with CCTV integration for warehouse m
 ### Prerequisites
 - Node.js 18.x or higher
 - MySQL 8.x
-- Redis 6.x
 - Nginx
 - PM2 (for production)
+- Redis 6.x (optional, for WebSocket scaling)
 
 ### Installation
 
@@ -39,7 +39,10 @@ npm run dev
 
 # Production
 npm run build
-node rfid_server.js
+node main_web_server.js
+
+# Or with PM2
+pm2 start ecosystem.config.js
 ```
 
 ## 🏗️ Architecture
@@ -77,7 +80,7 @@ node rfid_server.js
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `NODE_ENV` | Environment | `development` | ✅ |
+| `NODE_ENV` | Environment | `production` | ✅ |
 | `DB_HOST` | MySQL host | `127.0.0.1` | ✅ |
 | `DB_USER` | MySQL user | - | ✅ |
 | `DB_PASSWORD` | MySQL password | - | ✅ |
@@ -85,14 +88,18 @@ node rfid_server.js
 | `SERVER_PORT` | API server port | `3002` | ✅ |
 | `CCTV_BASE_URL` | CCTV server URL | - | ✅ |
 | `CCTV_LOGIN` | CCTV username | - | ✅ |
-| `CCTV_PASSWORD` | CCTV password (base64) | - | ✅ |
-| `RATE_LIMIT_MAX` | Rate limit per window | `200` | ❌ |
-| `CORS_ORIGINS` | Allowed origins | - | ✅ |
+| `CCTV_PASSWORD` | CCTV password | - | ✅ |
+| `METRICS_TOKEN` | Prometheus auth token | - | ✅ |
+| `WS_ALLOWED_ORIGINS` | WebSocket origins | - | ✅ |
+| `LOG_LEVEL` | Logging level | `info` | ❌ |
+| `INPUT_CONCURRENCY` | RFID batch size | `20` | ❌ |
+| `CORS_ORIGINS` | HTTP CORS origins | - | ✅ |
 
 ### Cache Configuration
-- **Database queries**: 5-second TTL LRU cache
-- **Static assets**: 1-year browser cache
-- **API responses**: No cache (real-time data)
+- **Video files**: On-demand download with filesystem cache
+- **Static assets**: 1-year browser cache (React build)
+- **API responses**: No cache (real-time RFID data)
+- **Metrics**: No cache (live Prometheus metrics)
 
 ## 📡 API Reference
 
@@ -100,7 +107,7 @@ node rfid_server.js
 
 #### Health Check
 ```http
-GET /api/monitoring/health
+GET /api/health
 ```
 
 **Response**
@@ -118,8 +125,10 @@ GET /api/monitoring/health
 
 #### Metrics
 ```http
-GET /api/monitoring/metrics
+GET /metrics
 ```
+
+**Note**: Requires `Authorization: Bearer <METRICS_TOKEN>` header
 
 ### Data Endpoints
 
@@ -174,6 +183,9 @@ npm start
 
 # Backend only  
 npm run server
+
+# Backend with pretty logs
+npm run dev:pretty
 
 # Run tests
 npm run test:api
@@ -236,17 +248,20 @@ cp .env.example .env
 # Configure .env for production
 
 # Configure Nginx
-sudo cp nginx.conf /etc/nginx/sites-available/actinvent8
+sudo cp nginx-complete.conf /etc/nginx/sites-available/actinvent8
 sudo ln -s /etc/nginx/sites-available/actinvent8 /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 3. **Process Management**
 ```bash
-# Start with PM2
-pm2 start rfid_server.js --name "actinvent8"
+# Start with PM2 (recommended)
+pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
+
+# Or manual start
+node main_web_server.js
 ```
 
 ### Nginx Configuration
@@ -281,10 +296,10 @@ server {
 ## 🔍 Monitoring & Troubleshooting
 
 ### Health Checks
-- **Application**: `GET /api/monitoring/health`
-- **Database**: Automatic connection testing
-- **Redis**: Connection verification
-- **Filesystem**: Cache directory access
+- **Application**: `GET /api/health`
+- **Readiness**: `GET /api/ready` (database connectivity)
+- **WebSocket**: `GET /api/ws/status`
+- **Metrics**: `GET /metrics` (with auth token)
 
 ### Log Files
 ```bash
@@ -292,7 +307,7 @@ server {
 tail -f logs/combined.log
 
 # PM2 logs
-pm2 logs actinvent8
+pm2 logs actinvent8-web-server
 
 # Nginx logs
 sudo tail -f /var/log/nginx/access.log
@@ -300,9 +315,10 @@ sudo tail -f /var/log/nginx/error.log
 ```
 
 ### Performance Monitoring
-- **Metrics endpoint**: `/api/monitoring/metrics`
-- **Performance stats**: `/api/monitoring/performance`
-- **Active alerts**: `/api/monitoring/alerts`
+- **Prometheus metrics**: `GET /metrics` (with auth)
+- **Health status**: `GET /api/health`
+- **System readiness**: `GET /api/ready`
+- **WebSocket status**: `GET /api/ws/status`
 
 ### Common Issues
 
@@ -312,17 +328,17 @@ sudo tail -f /var/log/nginx/error.log
 curl -X POST http://localhost:3002/api/input \
   -d "field_values=[[\"test\",\"reader\",\"epc\",\"1\"]]"
 
-# Verify database cache
-curl http://localhost:3002/api/monitoring/metrics
+# Check system health
+curl http://localhost:3002/api/health
 ```
 
 #### High Memory Usage
 ```bash
-# Check memory stats
-curl http://localhost:3002/api/monitoring/system
+# Check Prometheus metrics (requires token)
+curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:3002/metrics | grep process
 
-# Clear video cache if needed
-curl -X DELETE http://localhost:3002/api/cache/clear
+# Monitor video cache size
+du -sh static/cache/videos/
 ```
 
 #### Database Connection Issues
@@ -330,8 +346,8 @@ curl -X DELETE http://localhost:3002/api/cache/clear
 # Test database connection
 mysql -u $DB_USER -p$DB_PASSWORD -h $DB_HOST $DB_NAME -e "SELECT 1;"
 
-# Check connection pool
-curl http://localhost:3002/api/monitoring/health
+# Check database readiness
+curl http://localhost:3002/api/ready
 ```
 
 ### Performance Tuning
