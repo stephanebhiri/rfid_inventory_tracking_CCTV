@@ -1,0 +1,100 @@
+/* =============================================================================
+   MISSING STYLES - FLUENT UI EXTENSIONS
+   This file contains styles for classes that were used in components but not defined in the main CSS.
+   ============================================================================= */
+
+/* === UTILITY CLASSES === */
+
+.bg-success {
+  background-color: var(--fluent-semantic-success) !important;
+  color: white;
+}
+
+.status-dot-gray {
+  background-color: var(--fluent-neutral-background-6);
+}
+
+/* === ANIMATIONS === */
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+/* === CCTV GRID === */
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--fluent-spacing-horizontal-l);
+}
+
+/* === TABLE SORTING === */
+
+.sortable::after {
+  content: ' \2195'; /* Up-down arrow */
+  opacity: 0.5;
+  margin-left: var(--fluent-spacing-horizontal-xs);
+}
+
+.sort-asc::after {
+  content: ' \2191'; /* Up arrow */
+  opacity: 1;
+  color: var(--fluent-brand-primary);
+  margin-left: var(--fluent-spacing-horizontal-xs);
+}
+
+.sort-desc::after {
+  content: ' \2193'; /* Down arrow */
+  opacity: 1;
+  color: var(--fluent-brand-primary);
+  margin-left: var(--fluent-spacing-horizontal-xs);
+}
+
+/* === LEGACY MATERIAL DESIGN BUTTONS (Styled with Fluent UI) === */
+
+.md-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-horizontal-s);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-l);
+  border: 1px solid transparent;
+  border-radius: var(--fluent-corner-radius-medium);
+  font-family: inherit;
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-medium);
+  line-height: var(--fluent-line-height-300);
+  cursor: pointer;
+  text-decoration: none;
+  outline: none;
+  transition: all var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  min-height: 32px;
+  position: relative;
+}
+
+.md-button--outlined {
+  background-color: var(--fluent-neutral-background-1);
+  border-color: var(--fluent-neutral-background-6);
+  color: var(--fluent-neutral-foreground-rest);
+}
+
+.md-button--outlined:hover:not(:disabled) {
+  background-color: var(--fluent-neutral-background-2);
+  border-color: var(--fluent-neutral-background-5);
+}
+
+.md-button--outlined.active {
+  background-color: var(--fluent-brand-selected);
+  border-color: var(--fluent-brand-primary);
+  color: var(--fluent-brand-primary);
+  font-weight: var(--fluent-font-weight-semibold);
+}

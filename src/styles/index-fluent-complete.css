@@ -1,0 +1,627 @@
+/* =============================================================================
+   CCTV COMPONENTS - 
+   
+   ============================================================================= */
+
+/* === CCTV VIDEO COMPONENTS === */
+
+/* Camera Slot - Container pour vidéo caméra */
+.cctv-camera-slot {
+  background-color: #000000;
+  border-radius: var(--fluent-corner-radius-medium);
+  overflow: hidden;
+  position: relative;
+  aspect-ratio: 16/9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fluent-neutral-foreground-rest);
+  box-shadow: var(--fluent-shadow-2);
+  transition: box-shadow var(--fluent-duration-normal) var(--fluent-curve-easy-ease);
+}
+
+.cctv-camera-slot:hover {
+  box-shadow: var(--fluent-shadow-4);
+}
+
+/* Camera Label - Badge nom caméra */
+.cctv-camera-label {
+  position: absolute;
+  top: var(--fluent-spacing-vertical-s);
+  left: var(--fluent-spacing-horizontal-s);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: var(--fluent-font-size-200);
+  font-weight: var(--fluent-font-weight-medium);
+  padding: var(--fluent-spacing-vertical-xxs) var(--fluent-spacing-horizontal-s);
+  border-radius: var(--fluent-corner-radius-small);
+  z-index: 10;
+}
+
+/* Camera Status - État de la caméra */
+.cctv-camera-status {
+  position: absolute;
+  bottom: var(--fluent-spacing-vertical-s);
+  right: var(--fluent-spacing-horizontal-s);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: var(--fluent-font-size-200);
+  font-weight: var(--fluent-font-weight-medium);
+  padding: var(--fluent-spacing-vertical-xxs) var(--fluent-spacing-horizontal-s);
+  border-radius: var(--fluent-corner-radius-small);
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-horizontal-xs);
+  z-index: 10;
+}
+
+/* === CCTV LAYOUT COMPONENTS === */
+
+/* CCTV Window - Container principal */
+.cctv-window {
+  background-color: var(--fluent-neutral-background-1);
+  border-radius: var(--fluent-corner-radius-large);
+  box-shadow: var(--fluent-shadow-4);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* CCTV Cameras Container */
+.cctv-cameras {
+  padding: var(--fluent-spacing-vertical-l);
+  background-color: var(--fluent-neutral-background-1);
+}
+
+/* === CCTV INFO COMPONENTS === */
+
+/* CCTV Info - Section d'informations */
+.cctv-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fluent-spacing-vertical-xs);
+}
+
+/* Element Name - Nom de l'élément */
+.cctv-element-name {
+  font-size: var(--fluent-font-size-400);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-neutral-foreground-rest);
+  margin: 0;
+}
+
+/* Status Line - Ligne de statut */
+.cctv-status-line {
+  font-size: var(--fluent-font-size-200);
+  color: var(--fluent-neutral-foreground-disabled);
+  font-family: 'Courier New', monospace;
+}
+
+/* === CCTV CONTROLS === */
+
+/* Control Button - Boutons de contrôle */
+.cctv-control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-horizontal-xs);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-m);
+  border: 1px solid var(--fluent-neutral-background-6);
+  border-radius: var(--fluent-corner-radius-medium);
+  background-color: var(--fluent-neutral-background-1);
+  color: var(--fluent-neutral-foreground-rest);
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  min-height: 32px;
+}
+
+.cctv-control-button:hover:not(:disabled) {
+  background-color: var(--fluent-neutral-background-2);
+  border-color: var(--fluent-neutral-background-5);
+}
+
+.cctv-control-button:active:not(:disabled) {
+  background-color: var(--fluent-neutral-background-3);
+  transform: scale(0.98);
+}
+
+.cctv-control-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* === CCTV SEARCH === */
+
+/* Search Container - Container de recherche */
+.cctv-search-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--fluent-spacing-vertical-xxxl);
+  gap: var(--fluent-spacing-vertical-l);
+  background-color: var(--fluent-neutral-background-2);
+  border-radius: var(--fluent-corner-radius-large);
+  text-align: center;
+}
+
+/* Search Dots - Animation de recherche */
+.cctv-search-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-horizontal-s);
+}
+
+/* === VIDEO PLAYER COMPONENTS === */
+
+.video-player-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Video Player Icon */
+.video-player-icon {
+  font-size: var(--fluent-font-size-800);
+  opacity: 0.7;
+  margin-bottom: var(--fluent-spacing-vertical-s);
+}
+
+/* Video Player Text */
+.video-player-title {
+  font-size: var(--fluent-font-size-400);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-neutral-foreground-rest);
+  margin: 0;
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+  .cctv-cameras {
+    padding: var(--fluent-spacing-vertical-m);
+  }
+  
+  .cctv-control-button {
+    padding: var(--fluent-spacing-vertical-xs) var(--fluent-spacing-horizontal-s);
+    font-size: var(--fluent-font-size-200);
+    min-height: 28px;
+  }
+}
+
+/* =============================================================================
+   TIMELINE COMPONENTS - FLUENT UI DESIGN SYSTEM
+   Timeline et D3 components converties vers Fluent UI
+   ============================================================================= */
+
+/* === TIMELINE LAYOUT === */
+
+.timeline-container {
+  background-color: var(--fluent-neutral-background-1);
+  border-radius: var(--fluent-corner-radius-large);
+  box-shadow: var(--fluent-shadow-2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.timeline-header {
+  background-color: var(--fluent-neutral-background-2);
+  padding: var(--fluent-spacing-vertical-l) var(--fluent-spacing-horizontal-xl);
+  border-bottom: 1px solid var(--fluent-neutral-background-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fluent-spacing-horizontal-l);
+}
+
+/* === TIMELINE INDICATORS === */
+
+.timeline-current-indicator {
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-brand-primary);
+  font-family: 'Courier New', monospace;
+  background-color: var(--fluent-brand-selected);
+  padding: var(--fluent-spacing-vertical-xs) var(--fluent-spacing-horizontal-s);
+  border-radius: var(--fluent-corner-radius-small);
+}
+
+.timeline-track {
+  font-size: var(--fluent-font-size-200);
+  color: var(--fluent-neutral-foreground-disabled);
+  font-family: 'Courier New', monospace;
+}
+
+/* === D3 TIMELINE === */
+
+.d3-timeline-container {
+  width: 100%;
+  height: 300px;
+  background-color: var(--fluent-neutral-background-1);
+  border-radius: var(--fluent-corner-radius-medium);
+  border: 1px solid var(--fluent-neutral-background-4);
+  overflow: hidden;
+  position: relative;
+}
+
+.d3-timeline-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.d3-timeline-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--fluent-neutral-background-2);
+  color: var(--fluent-neutral-foreground-disabled);
+  font-size: var(--fluent-font-size-300);
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+  .timeline-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--fluent-spacing-vertical-m);
+  }
+  
+  .d3-timeline-container {
+    height: 200px;
+  }
+}
+
+/* =============================================================================
+   UTILITY CLASSES -
+   
+   ============================================================================= */
+
+/* === LAYOUT UTILITIES === */
+
+.card-body {
+  padding: var(--fluent-spacing-vertical-l) var(--fluent-spacing-horizontal-l);
+  background-color: var(--fluent-neutral-background-1);
+}
+
+.info-bar {
+  background-color: var(--fluent-neutral-background-2);
+  border: 1px solid var(--fluent-neutral-background-4);
+  border-radius: var(--fluent-corner-radius-medium);
+  padding: var(--fluent-spacing-vertical-m) var(--fluent-spacing-horizontal-l);
+  margin-bottom: var(--fluent-spacing-vertical-l);
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-horizontal-m);
+}
+
+/* === FLEX UTILITIES === */
+
+.flex-items-gap-2 {
+  display: flex;
+  gap: var(--fluent-spacing-horizontal-s);
+}
+
+.flex-items-gap-3 {
+  display: flex;
+  gap: var(--fluent-spacing-horizontal-m);
+}
+
+/* === STATUS UTILITIES === */
+
+.loading-message {
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-horizontal-m);
+  padding: var(--fluent-spacing-vertical-l);
+  background-color: var(--fluent-neutral-background-2);
+  border-radius: var(--fluent-corner-radius-medium);
+  color: var(--fluent-neutral-foreground-disabled);
+  font-size: var(--fluent-font-size-300);
+}
+
+.time-elapsed {
+  font-size: var(--fluent-font-size-200);
+  color: var(--fluent-neutral-foreground-disabled);
+  font-family: 'Courier New', monospace;
+  background-color: var(--fluent-neutral-background-3);
+  padding: var(--fluent-spacing-vertical-xxs) var(--fluent-spacing-horizontal-xs);
+  border-radius: var(--fluent-corner-radius-small);
+}
+
+/* === ANIMATION UTILITIES === */
+
+.animate-spin {
+  animation: fluent-spin var(--fluent-duration-ultra-slow) var(--fluent-curve-linear) infinite;
+}
+
+/* === BACKGROUND UTILITIES === */
+
+.bg-error {
+  background-color: var(--fluent-semantic-error);
+  color: white;
+}
+
+/* === LEGACY BUTTON STYLES (to migrate) === */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-horizontal-s);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-l);
+  border: 1px solid var(--fluent-neutral-background-6);
+  border-radius: var(--fluent-corner-radius-medium);
+  background-color: var(--fluent-neutral-background-1);
+  color: var(--fluent-neutral-foreground-rest);
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  min-height: 32px;
+}
+
+.btn:hover {
+  background-color: var(--fluent-neutral-background-2);
+  border-color: var(--fluent-neutral-background-5);
+}
+
+.btn-primary {
+  background-color: var(--fluent-brand-primary);
+  border-color: var(--fluent-brand-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--fluent-brand-hover);
+  border-color: var(--fluent-brand-hover);
+}
+
+.btn-secondary {
+  background-color: var(--fluent-neutral-background-1);
+  border-color: var(--fluent-neutral-background-6);
+  color: var(--fluent-neutral-foreground-rest);
+}
+
+.btn-close {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--fluent-neutral-foreground-rest);
+}
+
+.btn-close:hover {
+  background-color: var(--fluent-neutral-background-3);
+}
+
+.btn-sm {
+  padding: var(--fluent-spacing-vertical-xs) var(--fluent-spacing-horizontal-s);
+  font-size: var(--fluent-font-size-200);
+  min-height: 24px;
+}
+
+.cctv-button {
+  background-color: var(--fluent-brand-primary);
+  border-color: var(--fluent-brand-primary);
+  color: white;
+}
+
+.cctv-button:hover {
+  background-color: var(--fluent-brand-hover);
+}
+
+/* === MODAL LEGACY === */
+
+.modal {
+  background-color: var(--fluent-neutral-background-1);
+  border-radius: var(--fluent-corner-radius-xlarge);
+  box-shadow: var(--fluent-shadow-64);
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  animation: modal-surface-enter var(--fluent-duration-normal) var(--fluent-curve-decelerate-mid);
+}
+
+.modal-xl {
+  max-width: 95vw;
+  max-height: 95vh;
+  width: 1400px;
+  height: 900px;
+}
+
+/* === TEXT UTILITIES === */
+
+.text-2 {
+  font-size: var(--fluent-font-size-200);
+  line-height: var(--fluent-line-height-200);
+}
+
+.fs-xs {
+  font-size: var(--fluent-font-size-200);
+}
+
+.fw-med {
+  font-weight: var(--fluent-font-weight-semibold);
+}
+
+.font-mono {
+  font-family: 'Courier New', monospace;
+}
+
+/* === SPACING LEGACY === */
+
+.d-flex {
+  display: flex;
+}
+
+.gap-2 {
+  gap: var(--fluent-spacing-horizontal-s);
+}
+
+.gap-3 {
+  gap: var(--fluent-spacing-horizontal-m);
+}
+
+/* === ICON UTILITIES === */
+
+.icon-sm {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-container-accent {
+  color: var(--fluent-brand-primary);
+}
+
+/* === STATUS INDICATORS === */
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--fluent-corner-radius-circular);
+  background-color: var(--fluent-neutral-background-6);
+  display: inline-block;
+}
+
+.status-dot-success {
+  background-color: var(--fluent-semantic-success);
+}
+
+.status-dot-accent {
+  background-color: var(--fluent-brand-primary);
+}
+
+
+/=================================================== */
+
+
+/* =============================================================================
+   TIME-BASED COLORING - FLUENT UI
+   Classes de couleur basées sur le temps,
+   ============================================================================= */
+
+/* Couleurs de base pour les rangées de tableau */
+.item-clickable {
+  cursor: pointer;
+  transition: background-color var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+}
+
+.item-clickable:hover {
+  background-color: var(--fluent-neutral-background-3);
+}
+
+/* Couleurs basées sur le temps */
+.time-fresh { background-color: rgba(16, 124, 16, 0.1); } /* < 1 min - vert clair */
+.time-recent { background-color: rgba(16, 124, 16, 0.05); } /* < 5 min - vert très clair */
+.time-5min { background-color: rgba(255, 235, 59, 0.1); } /* < 15 min - jaune clair */
+.time-15min { background-color: rgba(255, 193, 7, 0.1); } /* < 30 min - jaune-orange clair */
+.time-30min { background-color: rgba(255, 152, 0, 0.1); } /* < 1h - orange clair */
+.time-1hour { background-color: rgba(255, 87, 34, 0.1); } /* < 2h - orange-rouge clair */
+.time-2hour { background-color: rgba(244, 67, 54, 0.1); } /* < 6h - rouge clair */
+.time-6hour { background-color: rgba(209, 52, 56, 0.15); } /* < 12h - rouge moyen */
+.time-12hour { background-color: rgba(209, 52, 56, 0.2); } /* < 24h - rouge foncé */
+.time-24hour { background-color: rgba(176, 0, 32, 0.2); } /* < 48h - rouge très foncé */
+.time-48hour { background-color: rgba(176, 0, 32, 0.25); } /* >= 48h - rouge bordeaux */
+
+/* Couleurs de texte pour le temps écoulé */
+.time-elapsed {
+  font-size: var(--fluent-font-size-200);
+  font-family: 'Courier New', monospace;
+  padding: var(--fluent-spacing-vertical-xxs) var(--fluent-spacing-horizontal-xs);
+  border-radius: var(--fluent-corner-radius-small);
+  background-color: var(--fluent-neutral-background-3);
+  color: var(--fluent-neutral-foreground-disabled);
+}
+
+/* =============================================================================
+   INPUT FIELD 
+   
+   ============================================================================= */
+
+.input-field {
+  font-family: var(--fluent-font-family);
+  font-size: var(--fluent-font-size-300);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-m);
+  background-color: var(--fluent-neutral-background-1);
+  border: 1px solid var(--fluent-neutral-background-6);
+  border-radius: var(--fluent-corner-radius-medium);
+  color: var(--fluent-neutral-foreground-rest);
+  transition: border-color var(--fluent-duration-faster) var(--fluent-curve-easy-ease),
+              box-shadow var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  width: 100%;
+}
+
+.input-field:hover {
+  border-color: var(--fluent-neutral-background-5);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--fluent-brand-primary);
+  box-shadow: 0 0 0 1px var(--fluent-brand-primary);
+}
+
+.input-field::placeholder {
+  color: var(--fluent-neutral-foreground-disabled);
+  opacity: 0.7;
+}
+
+/* =============================================================================
+   NAV BUTTON 
+   
+   ============================================================================= */
+
+.nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-horizontal-s);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-l);
+  border: none;
+  border-radius: var(--fluent-corner-radius-medium);
+  background: transparent;
+  color: var(--fluent-neutral-foreground-rest);
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  position: relative;
+}
+
+.nav-button:hover {
+  background-color: var(--fluent-neutral-background-3);
+  color: var(--fluent-neutral-foreground-hover);
+}
+
+.nav-button.active {
+  background-color: var(--fluent-brand-selected);
+  color: var(--fluent-brand-primary);
+  font-weight: var(--fluent-font-weight-semibold);
+}
+
+.nav-button.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: var(--fluent-spacing-horizontal-s);
+  right: var(--fluent-spacing-horizontal-s);
+  height: 2px;
+  background-color: var(--fluent-brand-primary);
+  border-radius: var(--fluent-corner-radius-small);
+}
+
