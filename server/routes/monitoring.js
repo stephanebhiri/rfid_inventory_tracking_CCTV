@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 const { MonitoringService } = require('../services/MonitoringService');
 
 // Initialize monitoring service

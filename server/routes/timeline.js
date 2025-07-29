@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 
 // Helper function to get icon for group
 function getGroupIcon(groupName) {

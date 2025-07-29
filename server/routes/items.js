@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../config/database');
 const { validators, handleValidationErrors } = require('../middleware/validation');
 const ApiResponse = require('../utils/responseFormatter');
-const { logger, loggers } = require('../config/logger');
+const { logger, loggers } = require('../logger');
 const { DatabaseService } = require('../utils/dbOptimizations');
 
 // Initialize database service

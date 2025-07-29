@@ -4,7 +4,7 @@ const { getVideosForCamera, buildVideoResponse } = require('../utils/videoTools'
 const { clearCache } = require('../utils/fileTools');
 const { validators, handleValidationErrors } = require('../middleware/validation');
 const ApiResponse = require('../utils/responseFormatter');
-const { logger, loggers } = require('../config/logger');
+const { logger, loggers } = require('../logger');
 
 // Main API endpoint to get videos - returns closest video immediately
 router.get('/videos', 

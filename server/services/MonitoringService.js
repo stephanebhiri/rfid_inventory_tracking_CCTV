@@ -1,4 +1,4 @@
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 const pool = require('../config/database');
 const fs = require('fs').promises;
 const path = require('path');

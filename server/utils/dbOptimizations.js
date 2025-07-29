@@ -1,5 +1,5 @@
 const { LRUCache } = require('lru-cache');
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 
 // Query result cache with TTL
 const queryCache = new LRUCache({
