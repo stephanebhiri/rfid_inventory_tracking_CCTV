@@ -1,7 +1,7 @@
 module.exports = {
   apps: [{
-    name: 'actinvent8-rfid',
-    script: 'rfid_server.js',
+    name: 'actinvent8-web-server',
+    script: 'main_web_server.js',
     cwd: '/var/www/actinvent8',
     
     // Instance configuration

@@ -1,6 +1,6 @@
-// RFID Server script started (logged via logger once initialized)
-// A stable, minimal server dedicated to handling RFID input.
-// This bypasses the initialization issues in the main server/index.js.
+// Main Web Server for RFID Inventory Tracking System
+// Serves React frontend, handles API requests (items, CCTV, timeline),
+// processes RFID input, and manages video streaming with WebSocket real-time updates.
 require('dotenv').config();
 
 const express = require('express');
