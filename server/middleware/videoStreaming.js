@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+// Node >=18: utiliser le fetch natif, sinon node-fetch@2 (CJS) et garder require
+// (aucun import requis pour fetch natif)
 const { videoMetadata } = require('../utils/videoTools');
 const { CCTV } = require('../config/constants');
 const { authenticate } = require('../utils/auth');
@@ -10,20 +11,9 @@ const ApiResponse = require('../utils/responseFormatter');
 const downloadPromises = new Map(); // filename -> {promise, resolve, reject}
 const { pipeline } = require('stream/promises');
 
-// Helper to create deferred Promise
-function deferred() {
-  let resolve, reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-// Helper to serve video from cache - let Express handle Range requests
+// Helper to serve video from cache - let Express handle Range requests and Content-Type
 function serveFromCache(req, res, filename, cachePath) {
   console.log(`✅ Serving cached video: ${filename}`);
-  res.setHeader('Content-Type', 'video/mp4');
   // Laisse Express/send gérer Range & en-têtes automatiquement
   return res.sendFile(cachePath);
 }
@@ -73,10 +63,14 @@ async function handleVideoRequest(req, res) {
   }
   
   const cachePath = path.join(__dirname, '..', '..', 'static', 'cache', 'videos', filename);
+  
+  // (2) Protection path traversal additionnelle
+  const root = path.resolve(path.join(__dirname, '..', '..', 'static', 'cache', 'videos'));
+  const abs = path.resolve(cachePath);
+  if (!abs.startsWith(root + path.sep)) return ApiResponse.notFound(res, 'Video');
   console.log(`📹 Video request: ${filename}`);
   
-  // Try serving from cache first - let sendFile handle existence check
-  res.setHeader('Content-Type', 'video/mp4');
+  // Try serving from cache first - let sendFile handle existence check and Content-Type
   res.sendFile(cachePath, (err) => {
     if (!err) {
       console.log(`✅ Served cached video: ${filename}`);
@@ -215,8 +209,10 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     const { Readable } = require('node:stream');
     const tmp = cachePath + '.part';
     
-    // Conversion Web Stream → Node Stream (Node ≥18 idiomatique)
-    const nodeStream = Readable.fromWeb(response.body);
+    // Détection de type de stream pour compatibilité fetch natif/node-fetch
+    const nodeStream = (typeof response.body?.getReader === 'function')
+      ? Readable.fromWeb(response.body) // Web Stream (fetch natif / node-fetch v3)
+      : response.body;                   // Node stream (node-fetch v2)
     await pipeline(nodeStream, fs.createWriteStream(tmp));
     await fsp.rename(tmp, cachePath);
     
