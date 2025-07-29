@@ -6,16 +6,109 @@ const { CCTV } = require('../config/constants');
 const { authenticate } = require('../utils/auth');
 const ApiResponse = require('../utils/responseFormatter');
 
-// Track downloads in progress to avoid multiple simultaneous downloads
-const downloadsInProgress = new Set();
+// Promise-based download tracking - single source of truth
+const downloadPromises = new Map(); // filename -> {promise, resolve, reject}
+const { pipeline } = require('stream/promises');
+
+// Helper to create deferred Promise
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+// Helper to serve video from cache with Range support
+function serveFromCache(req, res, filename, cachePath) {
+  if (!fs.existsSync(cachePath)) {
+    console.error(`❌ Cache file not found: ${filename}`);
+    return ApiResponse.notFound(res, 'Video');
+  }
+
+  console.log(`✅ Serving cached video: ${filename}`);
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Accept-Ranges', 'bytes');
+  
+  const stat = fs.statSync(cachePath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+  
+  if (range) {
+    console.log(`📡 Range request: ${range} for ${filename} (fileSize: ${fileSize})`);
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    
+    if (isNaN(start) || start >= fileSize) {
+      console.error(`❌ Invalid range start: ${start} >= ${fileSize}`);
+      res.status(416).send('Range Not Satisfiable');
+      return;
+    }
+    
+    const actualEnd = Math.min(end, fileSize - 1);
+    const chunkSize = (actualEnd - start) + 1;
+    
+    console.log(`📊 Serving range: ${start}-${actualEnd}/${fileSize} (${chunkSize} bytes)`);
+    
+    const file = fs.createReadStream(cachePath, { start, end: actualEnd });
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${actualEnd}/${fileSize}`);
+    res.setHeader('Content-Length', chunkSize);
+    file.pipe(res);
+    return;
+  }
+  
+  // No range request - send full file
+  return res.sendFile(cachePath);
+}
+
+// Download semaphore to limit concurrent CCTV server requests
+class DownloadSemaphore {
+  constructor(maxConcurrent = 8) {
+    this.maxConcurrent = maxConcurrent;
+    this.current = 0;
+    this.waiting = [];
+  }
+
+  async acquire() {
+    if (this.current < this.maxConcurrent) {
+      this.current++;
+      console.log(`🔒 Download slot acquired (${this.current}/${this.maxConcurrent})`);
+      return;
+    }
+    
+    console.log(`⏳ Waiting for download slot (${this.current}/${this.maxConcurrent}, ${this.waiting.length} queued)`);
+    await new Promise(resolve => this.waiting.push(resolve));
+    this.current++;
+    console.log(`🔒 Download slot acquired after wait (${this.current}/${this.maxConcurrent})`);
+  }
+
+  release() {
+    this.current--;
+    console.log(`🔓 Download slot released (${this.current}/${this.maxConcurrent})`);
+    if (this.waiting.length > 0) {
+      const next = this.waiting.shift();
+      next();
+    }
+  }
+}
+
+const downloadSemaphore = new DownloadSemaphore(8);
 
 // Note: Using res.sendFile for cached videos - Express handles ranges automatically
 
 // Middleware to handle video file requests with progressive streaming
 async function handleVideoRequest(req, res) {
   const filename = req.params.filename;
-  const cachePath = path.join(__dirname, '..', '..', 'static', 'cache', 'videos', filename);
   
+  // (1) Valider le nom avant tout accès disque (évite traversal)
+  if (!/^cam\d+_\d+_[a-f0-9]+\.mp4$/i.test(filename)) {
+    return ApiResponse.notFound(res, 'Video');
+  }
+  
+  const cachePath = path.join(__dirname, '..', '..', 'static', 'cache', 'videos', filename);
   console.log(`📹 Video request: ${filename}`);
   
   // Check if file exists - serve with proper headers like legacy
@@ -58,81 +151,29 @@ async function handleVideoRequest(req, res) {
     return res.sendFile(cachePath);
   }
   
-  // Check if download is already in progress
-  if (downloadsInProgress.has(filename)) {
-    console.log(`⏳ Download in progress for ${filename}, waiting...`);
-    // Wait for download to complete
-    const maxWait = 30000; // 30 seconds
-    const interval = 100; // Check every 100ms
-    let waited = 0;
-    
-    const checkFile = () => {
-      if (fs.existsSync(cachePath)) {
-        console.log(`✅ Download completed for ${filename}, serving file`);
-        res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Accept-Ranges', 'bytes');
-        
-        // Handle Range requests for newly downloaded file
-        const stat = fs.statSync(cachePath);
-        const fileSize = stat.size;
-        const range = req.headers.range;
-        
-        if (range) {
-          console.log(`📡 Range request after download: ${range} for ${filename} (fileSize: ${fileSize})`);
-          const parts = range.replace(/bytes=/, "").split("-");
-          const start = parseInt(parts[0], 10);
-          const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-          
-          if (isNaN(start) || start >= fileSize) {
-            console.error(`❌ Invalid range start: ${start} >= ${fileSize}`);
-            res.status(416).send('Range Not Satisfiable');
-            return;
-          }
-          
-          const actualEnd = Math.min(end, fileSize - 1);
-          const chunkSize = (actualEnd - start) + 1;
-          
-          console.log(`📊 Serving range after download: ${start}-${actualEnd}/${fileSize} (${chunkSize} bytes)`);
-          
-          const file = fs.createReadStream(cachePath, { start, end: actualEnd });
-          res.status(206);
-          res.setHeader('Content-Range', `bytes ${start}-${actualEnd}/${fileSize}`);
-          res.setHeader('Content-Length', chunkSize);
-          file.pipe(res);
-          return;
-        }
-        
-        return res.sendFile(cachePath);
-      }
-      
-      if (waited >= maxWait) {
-        console.error(`⏰ Timeout waiting for download of ${filename}`);
-        return ApiResponse.serviceUnavailable(res, 'Video download timeout');
-      }
-      
-      waited += interval;
-      setTimeout(checkFile, interval);
-    };
-    
-    checkFile();
-    return;
+  // (3) Si un téléchargement identique est déjà en cours, attendre la même promesse
+  const existing = downloadPromises.get(filename);
+  if (existing) {
+    await existing.promise;
+    return res.sendFile(cachePath);
   }
   
-  // Extract camera ID and timestamp from filename
-  const match = filename.match(/cam(\d+)_(\d+)_([a-f0-9]+)\.mp4/);
-  if (!match) {
-    console.error(`❌ Invalid video filename format: ${filename}`);
-    return ApiResponse.notFound(res, 'Video');
-  }
+  // (4) Enregistrer la promesse AVANT tout await (source of truth)
+  let resolveDl, rejectDl;
+  const inFlight = new Promise((res, rej) => (resolveDl = res, rejectDl = rej));
+  downloadPromises.set(filename, { promise: inFlight, resolve: resolveDl, reject: rejectDl });
   
-  const cameraId = parseInt(match[1]);
-  const timestamp = parseInt(match[2]);
-  
-  // Mark download as in progress
-  downloadsInProgress.add(filename);
-  console.log(`🚀 Starting download for ${filename}`);
+  // (5) Slot de téléchargement
+  await downloadSemaphore.acquire();
   
   try {
+    // Extract camera ID and timestamp from filename
+    const match = filename.match(/cam(\d+)_(\d+)_([a-f0-9]+)\.mp4/);
+    const cameraId = parseInt(match[1]);
+    const timestamp = parseInt(match[2]);
+    
+    console.log(`🚀 Starting download for ${filename}`);
+    
     // Get authentication token and stream video directly
     console.log(`📡 Downloading video from CCTV server: ${filename}`);
     const token = await authenticate();
@@ -157,7 +198,7 @@ async function handleVideoRequest(req, res) {
       
       if (!(cameraId in CCTV.cameras)) {
         console.error(`❌ Invalid camera ID: ${cameraId}`);
-        return ApiResponse.notFound(res, 'Camera');
+        throw new Error('Invalid camera ID');
       }
       
       const cameraPath = CCTV.cameras[cameraId];
@@ -200,7 +241,7 @@ async function handleVideoRequest(req, res) {
       
       if (!foundVideo) {
         console.error(`❌ Video not found on CCTV server: ${filename}`);
-        return ApiResponse.notFound(res, 'Video not found on CCTV server');
+        throw new Error('Video not found on CCTV server');
       }
       
       // Use found video metadata
@@ -216,85 +257,49 @@ async function handleVideoRequest(req, res) {
       videoMetadata.set(filename, foundVideo);
     }
     
-    const response = await fetch(`${url}?${params}`);
+    // (6) Annuler si le client coupe
+    const ac = new AbortController();
+    req.on('close', () => ac.abort());
+    
+    const response = await fetch(`${url}?${params}`, { signal: ac.signal });
     if (!response.ok) {
       console.error(`❌ Failed to stream video: ${response.status} ${response.statusText}`);
+      rejectDl(new Error(`Failed to stream video: ${response.status}`));
+      downloadPromises.delete(filename);
       return ApiResponse.serviceUnavailable(res, 'Video streaming service', `HTTP ${response.status}`);
     }
     
-    // Set headers for video streaming - Safari needs Content-Length
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Accept-Ranges', 'bytes');
+    // (7) Écriture atomique + pipeline
+    console.log(`📡 Downloading video using pipeline: ${filename}`);
+    const fsp = require('fs/promises');
+    const { Readable } = require('node:stream');
+    const tmp = cachePath + '.part';
     
-    const contentLength = response.headers.get('content-length');
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
-    }
+    // Compatibilité infaillible : Web Stream → Node Stream si nécessaire
+    const nodeStream = response.body?.getReader ? Readable.fromWeb(response.body) : response.body;
+    await pipeline(nodeStream, fs.createWriteStream(tmp));
+    await fsp.rename(tmp, cachePath);
     
-    // Download completely first, then serve with full Range support
-    console.log(`📡 Downloading video completely first: ${filename}`);
+    console.log(`💾 Video download completed: ${filename}`);
     
-    // Create write stream for caching (direct to final location)
-    const cacheStream = fs.createWriteStream(cachePath);
-    
-    // Handle cache write errors
-    cacheStream.on('error', (cacheError) => {
-      console.error(`⚠️  Cache write failed for ${filename}:`, cacheError.message);
-      downloadsInProgress.delete(filename);
-      // Clean up partial file on error
-      fs.unlink(cachePath, () => {});
-      return ApiResponse.internalError(res, 'Download failed');
-    });
-    
-    cacheStream.on('finish', () => {
-      console.log(`💾 Video download completed: ${filename}`);
-      downloadsInProgress.delete(filename);
-      
-      // Now serve the complete file with proper Range support
-      res.setHeader('Content-Type', 'video/mp4');
-      res.setHeader('Accept-Ranges', 'bytes');
-      
-      const stat = fs.statSync(cachePath);
-      const fileSize = stat.size;
-      const range = req.headers.range;
-      
-      if (range) {
-        console.log(`📡 Serving Range request: ${range} for ${filename} (fileSize: ${fileSize})`);
-        const parts = range.replace(/bytes=/, "").split("-");
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-        
-        if (isNaN(start) || start >= fileSize) {
-          console.error(`❌ Invalid range start: ${start} >= ${fileSize}`);
-          res.status(416).send('Range Not Satisfiable');
-          return;
-        }
-        
-        const actualEnd = Math.min(end, fileSize - 1);
-        const chunkSize = (actualEnd - start) + 1;
-        
-        console.log(`📊 Serving range: ${start}-${actualEnd}/${fileSize} (${chunkSize} bytes)`);
-        
-        const file = fs.createReadStream(cachePath, { start, end: actualEnd });
-        res.status(206);
-        res.setHeader('Content-Range', `bytes ${start}-${actualEnd}/${fileSize}`);
-        res.setHeader('Content-Length', chunkSize);
-        file.pipe(res);
-      } else {
-        // No range request - send full file
-        res.sendFile(cachePath);
-      }
-    });
-    
-    // Download to cache first (don't serve to client yet)
-    response.body.pipe(cacheStream);
-    
-    console.log(`⏳ Downloading ${filename} - will serve when complete`);
+    resolveDl();
+    downloadPromises.delete(filename);
+    return res.sendFile(cachePath);
     
   } catch (error) {
     console.error(`💥 Error handling video request:`, error);
-    downloadsInProgress.delete(filename);
+    
+    rejectDl(error);
+    downloadPromises.delete(filename);
+    
+    // Clean up .part file if it exists
+    const tmpPath = cachePath + '.part';
+    fs.unlink(tmpPath, () => {}); // ignore errors
+    
     return ApiResponse.internalError(res, error);
+  } finally {
+    // Always release semaphore
+    downloadSemaphore.release();
   }
 }
 
