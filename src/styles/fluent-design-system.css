@@ -1,0 +1,498 @@
+/* =============================================================================
+   ACTINVENT - FLUENT DESIGN SYSTEM
+   Microsoft Fluent UI inspired design tokens & components
+   ============================================================================= */
+
+/* ===== FLUENT DESIGN TOKENS ===== */
+:root {
+  /* Fluent Color System */
+  --fluent-neutral-foreground-rest: #323130;
+  --fluent-neutral-foreground-hover: #201f1e;
+  --fluent-neutral-foreground-disabled: #a19f9d;
+  
+  --fluent-neutral-background-1: #ffffff;
+  --fluent-neutral-background-2: #faf9f8;
+  --fluent-neutral-background-3: #f3f2f1;
+  --fluent-neutral-background-4: #edebe9;
+  --fluent-neutral-background-5: #e1dfdd;
+  --fluent-neutral-background-6: #c8c6c4;
+  
+  --fluent-brand-primary: #0078d4;
+  --fluent-brand-hover: #106ebe;
+  --fluent-brand-pressed: #005a9e;
+  --fluent-brand-selected: #deecf9;
+  
+  --fluent-semantic-success: #107c10;
+  --fluent-semantic-warning: #ff8c00;
+  --fluent-semantic-error: #d13438;
+  --fluent-semantic-info: #0078d4;
+  
+  /* Fluent Typography Scale */
+  --fluent-font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --fluent-font-size-100: 10px;
+  --fluent-font-size-200: 12px;
+  --fluent-font-size-300: 14px;
+  --fluent-font-size-400: 16px;
+  --fluent-font-size-500: 20px;
+  --fluent-font-size-600: 24px;
+  --fluent-font-size-700: 28px;
+  --fluent-font-size-800: 32px;
+  --fluent-font-size-900: 40px;
+  
+  --fluent-font-weight-regular: 400;
+  --fluent-font-weight-medium: 500;
+  --fluent-font-weight-semibold: 600;
+  --fluent-font-weight-bold: 700;
+  
+  --fluent-line-height-100: 14px;
+  --fluent-line-height-200: 16px;
+  --fluent-line-height-300: 20px;
+  --fluent-line-height-400: 22px;
+  --fluent-line-height-500: 28px;
+  --fluent-line-height-600: 32px;
+  --fluent-line-height-700: 36px;
+  --fluent-line-height-800: 40px;
+  --fluent-line-height-900: 52px;
+  
+  /* Fluent Spacing Scale */
+  --fluent-spacing-horizontal-xxs: 2px;
+  --fluent-spacing-horizontal-xs: 4px;
+  --fluent-spacing-horizontal-s-nudge: 6px;
+  --fluent-spacing-horizontal-s: 8px;
+  --fluent-spacing-horizontal-m-nudge: 10px;
+  --fluent-spacing-horizontal-m: 12px;
+  --fluent-spacing-horizontal-l: 16px;
+  --fluent-spacing-horizontal-xl: 20px;
+  --fluent-spacing-horizontal-xxl: 24px;
+  --fluent-spacing-horizontal-xxxl: 32px;
+  
+  --fluent-spacing-vertical-xxs: 2px;
+  --fluent-spacing-vertical-xs: 4px;
+  --fluent-spacing-vertical-s-nudge: 6px;
+  --fluent-spacing-vertical-s: 8px;
+  --fluent-spacing-vertical-m-nudge: 10px;
+  --fluent-spacing-vertical-m: 12px;
+  --fluent-spacing-vertical-l: 16px;
+  --fluent-spacing-vertical-xl: 20px;
+  --fluent-spacing-vertical-xxl: 24px;
+  --fluent-spacing-vertical-xxxl: 32px;
+  
+  /* Fluent Corner Radius */
+  --fluent-corner-radius-none: 0;
+  --fluent-corner-radius-small: 2px;
+  --fluent-corner-radius-medium: 4px;
+  --fluent-corner-radius-large: 6px;
+  --fluent-corner-radius-xlarge: 8px;
+  --fluent-corner-radius-circular: 50%;
+  
+  /* Fluent Shadows */
+  --fluent-shadow-2: 0 0 2px rgba(0,0,0,0.12), 0 2px 2px rgba(0,0,0,0.24);
+  --fluent-shadow-4: 0 0 2px rgba(0,0,0,0.12), 0 4px 4px rgba(0,0,0,0.24);
+  --fluent-shadow-8: 0 0 2px rgba(0,0,0,0.12), 0 8px 8px rgba(0,0,0,0.24);
+  --fluent-shadow-16: 0 0 2px rgba(0,0,0,0.12), 0 16px 16px rgba(0,0,0,0.24);
+  --fluent-shadow-64: 0 0 8px rgba(0,0,0,0.12), 0 64px 64px rgba(0,0,0,0.24);
+  
+  /* Fluent Motion */
+  --fluent-curve-accelerate-max: cubic-bezier(1,0,1,1);
+  --fluent-curve-accelerate-mid: cubic-bezier(0.7,0,1,0.5);
+  --fluent-curve-accelerate-min: cubic-bezier(0.8,0,0.78,1);
+  --fluent-curve-decelerate-max: cubic-bezier(0,0,0,1);
+  --fluent-curve-decelerate-mid: cubic-bezier(0.1,0.9,0.2,1);
+  --fluent-curve-decelerate-min: cubic-bezier(0.33,0,0.1,1);
+  --fluent-curve-easy-ease: cubic-bezier(0.33,0,0.67,1);
+  --fluent-curve-linear: linear;
+  
+  --fluent-duration-ultra-fast: 50ms;
+  --fluent-duration-faster: 100ms;
+  --fluent-duration-fast: 150ms;
+  --fluent-duration-normal: 200ms;
+  --fluent-duration-gentle: 250ms;
+  --fluent-duration-slow: 300ms;
+  --fluent-duration-slower: 400ms;
+  --fluent-duration-ultra-slow: 500ms;
+}
+
+/* ===== FLUENT RESET ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--fluent-font-family);
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-regular);
+  line-height: var(--fluent-line-height-300);
+  color: var(--fluent-neutral-foreground-rest);
+  background-color: var(--fluent-neutral-background-1);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ===== FLUENT LAYOUT COMPONENTS ===== */
+
+/* App Shell */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--fluent-neutral-background-1);
+}
+
+/* Navigation Rail */
+.nav-rail {
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-horizontal-s);
+  padding: var(--fluent-spacing-vertical-m) var(--fluent-spacing-horizontal-l);
+  background-color: var(--fluent-neutral-background-2);
+  border-bottom: 1px solid var(--fluent-neutral-background-4);
+  box-shadow: var(--fluent-shadow-2);
+}
+
+.nav-rail-brand {
+  font-size: var(--fluent-font-size-500);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-neutral-foreground-rest);
+}
+
+.nav-rail-subtitle {
+  font-size: var(--fluent-font-size-200);
+  color: var(--fluent-neutral-foreground-disabled);
+  margin-top: var(--fluent-spacing-vertical-xxs);
+}
+
+.nav-rail-actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--fluent-spacing-horizontal-s);
+}
+
+/* Page Content */
+.page-content {
+  flex: 1;
+  padding: var(--fluent-spacing-vertical-xxl);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ===== FLUENT NAVIGATION COMPONENTS ===== */
+
+/* Tab Bar */
+.tab-bar {
+  display: flex;
+  gap: var(--fluent-spacing-horizontal-xs);
+  margin-bottom: var(--fluent-spacing-vertical-xxl);
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-horizontal-s);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-l);
+  border: none;
+  border-radius: var(--fluent-corner-radius-medium);
+  background: transparent;
+  color: var(--fluent-neutral-foreground-rest);
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  position: relative;
+}
+
+.tab-item:hover {
+  background-color: var(--fluent-neutral-background-3);
+  color: var(--fluent-neutral-foreground-hover);
+}
+
+.tab-item:active {
+  background-color: var(--fluent-neutral-background-4);
+  transform: scale(0.98);
+}
+
+/* ===== FLUENT BUTTON COMPONENTS ===== */
+
+/* Button Base */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-horizontal-s);
+  padding: var(--fluent-spacing-vertical-s) var(--fluent-spacing-horizontal-l);
+  border: 1px solid transparent;
+  border-radius: var(--fluent-corner-radius-medium);
+  font-family: inherit;
+  font-size: var(--fluent-font-size-300);
+  font-weight: var(--fluent-font-weight-medium);
+  line-height: var(--fluent-line-height-300);
+  cursor: pointer;
+  text-decoration: none;
+  outline: none;
+  transition: all var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+  min-height: 32px;
+  position: relative;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Button Variants */
+.button--subtle {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--fluent-neutral-foreground-rest);
+}
+
+.button--subtle:hover:not(:disabled) {
+  background-color: var(--fluent-neutral-background-3);
+}
+
+.button--subtle:active:not(:disabled) {
+  background-color: var(--fluent-neutral-background-4);
+  transform: scale(0.98);
+}
+
+/* ===== FLUENT DATA COMPONENTS ===== */
+
+/* Data Table */
+.data-table {
+  width: 100%;
+  background-color: var(--fluent-neutral-background-1);
+  border: 1px solid var(--fluent-neutral-background-4);
+  border-radius: var(--fluent-corner-radius-large);
+  box-shadow: var(--fluent-shadow-2);
+}
+
+.data-table-header,
+table.data-table-header thead {
+  background-color: var(--fluent-neutral-background-1);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+
+
+.data-table-body-row {
+  border-bottom: 1px solid var(--fluent-neutral-background-4);
+  transition: background-color var(--fluent-duration-faster) var(--fluent-curve-easy-ease);
+}
+
+.data-table-body-row:hover {
+  background-color: var(--fluent-neutral-background-2);
+}
+
+/* ===== FLUENT SURFACE COMPONENTS ===== */
+
+/* Cards */
+.surface-card {
+  background-color: var(--fluent-neutral-background-1);
+  border: 1px solid var(--fluent-neutral-background-4);
+  border-radius: var(--fluent-corner-radius-large);
+  padding: var(--fluent-spacing-vertical-l) var(--fluent-spacing-horizontal-l);
+  box-shadow: var(--fluent-shadow-2);
+  transition: box-shadow var(--fluent-duration-normal) var(--fluent-curve-easy-ease);
+}
+
+.surface-card:hover {
+  box-shadow: var(--fluent-shadow-4);
+}
+
+.surface-card-header {
+  margin-bottom: var(--fluent-spacing-vertical-l);
+  padding-bottom: var(--fluent-spacing-vertical-m);
+  border-bottom: 1px solid var(--fluent-neutral-background-4);
+}
+
+.surface-card-title {
+  font-size: var(--fluent-font-size-500);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-neutral-foreground-rest);
+  margin: 0;
+}
+
+.surface-card-subtitle {
+  font-size: var(--fluent-font-size-300);
+  color: var(--fluent-neutral-foreground-disabled);
+  margin-top: var(--fluent-spacing-vertical-xs);
+}
+
+/* Modal Stacked Screen */
+.modal-left {
+  top: 0;
+  height: 50%;
+}
+
+.modal-surface-left {
+  top: 10% !important;
+  transform: translateX(-50%) !important;
+}
+
+.modal-right {
+  top: 50%;
+  height: 50%;
+}
+
+.modal-surface-right {
+  top: 10% !important;
+  transform: translateX(-50%) !important;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: modal-backdrop-enter var(--fluent-duration-normal) var(--fluent-curve-decelerate-mid);
+}
+
+.modal-surface {
+  background-color: var(--fluent-neutral-background-1);
+  border-radius: var(--fluent-corner-radius-xlarge);
+  box-shadow: var(--fluent-shadow-64);
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  animation: modal-surface-enter var(--fluent-duration-normal) var(--fluent-curve-decelerate-mid);
+}
+
+.modal-header {
+  padding: var(--fluent-spacing-vertical-l) var(--fluent-spacing-horizontal-xl);
+  border-bottom: 1px solid var(--fluent-neutral-background-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-title {
+  font-size: var(--fluent-font-size-500);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-neutral-foreground-rest);
+  margin: 0;
+}
+
+.modal-content {
+  padding: var(--fluent-spacing-vertical-l) var(--fluent-spacing-horizontal-xl);
+  overflow-y: auto;
+}
+
+/* ===== FLUENT STATUS COMPONENTS ===== */
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fluent-spacing-horizontal-xs);
+  padding: var(--fluent-spacing-vertical-xxs) var(--fluent-spacing-horizontal-s);
+  border-radius: var(--fluent-corner-radius-small);
+  font-size: var(--fluent-font-size-200);
+  font-weight: var(--fluent-font-weight-medium);
+  line-height: var(--fluent-line-height-200);
+}
+
+.status-badge--neutral {
+  background-color: var(--fluent-neutral-background-4);
+  color: var(--fluent-neutral-foreground-rest);
+}
+
+/* Alert Messages */
+.alert-message {
+  padding: var(--fluent-spacing-vertical-m) var(--fluent-spacing-horizontal-l);
+  border-radius: var(--fluent-corner-radius-medium);
+  border-left: 4px solid;
+  margin-bottom: var(--fluent-spacing-vertical-l);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fluent-spacing-horizontal-m);
+}
+
+.alert-message--error {
+  background-color: rgba(209, 52, 56, 0.05);
+  border-color: var(--fluent-semantic-error);
+  color: var(--fluent-semantic-error);
+}
+
+/* ===== FLUENT UTILITY CLASSES ===== */
+
+/* Icons */
+.icon-small { width: 16px; height: 16px; }
+.icon-medium { width: 20px; height: 20px; }
+
+/* Typography */
+.text-secondary { color: var(--fluent-neutral-foreground-disabled); }
+.text-accent { color: var(--fluent-brand-primary); }
+
+.text-caption-1 { font-size: var(--fluent-font-size-200); line-height: var(--fluent-line-height-200); }
+.text-body-1 { font-size: var(--fluent-font-size-300); line-height: var(--fluent-line-height-300); }
+.text-body-1-strong { font-size: var(--fluent-font-size-300); line-height: var(--fluent-line-height-300); font-weight: var(--fluent-font-weight-semibold); }
+.text-title-3 { font-size: var(--fluent-font-size-500); line-height: var(--fluent-line-height-500); font-weight: var(--fluent-font-weight-semibold); }
+
+/* Spacing */
+.stack-vertical { display: flex; flex-direction: column; }
+.stack-horizontal { display: flex; flex-direction: row; }
+.stack-between { justify-content: space-between; }
+.stack-gap-small { gap: var(--fluent-spacing-horizontal-s); }
+.stack-gap-medium { gap: var(--fluent-spacing-horizontal-m); }
+
+/* Loading */
+.spinner {
+  animation: fluent-spin var(--fluent-duration-ultra-slow) var(--fluent-curve-linear) infinite;
+  width: 20px;
+  height: 20px;
+}
+
+/* ===== FLUENT ANIMATIONS ===== */
+@keyframes fluent-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes modal-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-surface-enter {
+  from { 
+    opacity: 0; 
+    transform: scale(0.9) translateY(-20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1) translateY(0); 
+  }
+}
+
+/* ===== FLUENT RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .page-content {
+    padding: var(--fluent-spacing-vertical-l);
+  }
+  
+  .nav-rail {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--fluent-spacing-vertical-s);
+  }
+  
+  .tab-bar {
+    flex-direction: column;
+    gap: var(--fluent-spacing-vertical-xs);
+  }
+  
+  .modal-surface {
+    margin: var(--fluent-spacing-horizontal-l);
+    max-width: calc(100vw - 2 * var(--fluent-spacing-horizontal-l));
+  }
+  
+}
