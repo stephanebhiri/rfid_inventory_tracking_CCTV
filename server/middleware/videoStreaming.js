@@ -15,6 +15,7 @@ const { metrics } = require('../metrics');
 // Promise-based download tracking - single source of truth
 const downloadPromises = new Map(); // filename -> {promise, resolve, reject}
 const { pipeline } = require('stream/promises');
+const { PassThrough } = require('node:stream');
 
 // Options de cache communes pour toutes les réponses sendFile
 const SEND_OPTS = { maxAge: '365d', immutable: true };
@@ -329,39 +330,59 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     metrics.cctvDownloadsInProgress.inc();
     downloadGaugeRaised = true;
     downloadTimer = metrics.cctvDownloadDuration.startTimer();
-    
-    // (7) Écriture atomique + pipeline
-    logger.info({ filename, contentLength: response.headers.get('content-length') }, 'Starting video pipeline download');
+
+    // (7) Tee streaming: on envoie immédiatement au client ET on écrit en cache
+    logger.info({ filename, contentLength: response.headers.get('content-length') }, 'Starting tee streaming to client & cache');
     const fsp = require('fs/promises');
     const { Readable } = require('node:stream');
     const tmp = cachePath + '.part';
-    
-    // Détection de type de stream pour compatibilité fetch natif/node-fetch
+
+    // Prépare les flux (compat natif/node-fetch)
     const nodeStream = (typeof response.body?.getReader === 'function')
-      ? Readable.fromWeb(response.body) // Web Stream (fetch natif / node-fetch v3)
-      : response.body;                   // Node stream (node-fetch v2)
-    // Créer le dossier parent si nécessaire
+      ? Readable.fromWeb(response.body)
+      : response.body;
+
+    // En-têtes HTTP pour que le client démarre la lecture tout de suite
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'video/mp4');
+      const len = response.headers.get('content-length');
+      if (len) res.setHeader('Content-Length', len);
+      // cache côté navigateur (le fichier servi ici est immuable)
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+
     await fsp.mkdir(path.dirname(cachePath), { recursive: true });
-    
-    await pipeline(nodeStream, fs.createWriteStream(tmp));
+    const fileOut = fs.createWriteStream(tmp);
+    const tee = new PassThrough();
+
+    // Démarre la duplication: tee -> client & tee -> fichier
+    // On NE bloque pas sur la fin côté client (il peut abandonner), mais on sécurise le cache.
+    const clientPipe = pipeline(tee, res).catch(() => {/* client aborted / closed: ignore here */});
+    const filePipe   = pipeline(tee, fileOut); // on attendra celui-ci
+
+    // Source -> tee (démarre réellement le flux et donc l'envoi au client)
+    await pipeline(nodeStream, tee);
+    // Assure que l'écriture fichier est terminée
+    await filePipe;
+
+    // Commit atomique du cache
     await fsp.rename(tmp, cachePath);
-    
+
     // *** MÉTRIQUES CRITIQUES: fin de téléchargement ***
-    downloadTimer(); // Arrêter le timer
-    
+    if (downloadTimer) downloadTimer(); // Arrêter le timer
+
     const duration = Date.now() - requestStart;
-    logger.info({ 
-      filename, 
-      duration, 
-      cacheSize: (await fsp.stat(cachePath)).size,
-      requestId: req.id 
-    }, 'Video download completed successfully');
-    
+    let cacheSize = 0;
+    try { cacheSize = (await fsp.stat(cachePath)).size; } catch {}
+    logger.info({ filename, duration, cacheSize, requestId: req.id }, 'Tee streaming completed & cached');
+
     metrics.videoRequestDuration.labels('miss_fresh').observe(duration / 1000);
-    
+
+    // Réveille les requêtes concurrentes en attente (elles serviront via sendFile)
     resolveDl();
     downloadPromises.delete(filename);
-    return res.sendFile(cachePath, SEND_OPTS);
+    // Ici on a déjà streamé la réponse au client ; ne pas renvoyer sendFile().
+    return;
     
   } catch (error) {
     const isAbort = error?.name === 'AbortError';
