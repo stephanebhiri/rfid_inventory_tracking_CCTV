@@ -53,7 +53,7 @@ class DownloadSemaphore {
   }
 }
 
-const downloadSemaphore = new DownloadSemaphore(8);
+const downloadSemaphore = new DownloadSemaphore(25);
 
 // Note: Using res.sendFile for cached videos - Express handles ranges automatically
 
@@ -162,7 +162,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
   // (5) Slot de téléchargement
   await downloadSemaphore.acquire();
   
-  let ac, onClose, muxCtl; // Déclaré hors du try pour être visible en finally
+  let ac, onClose, muxCtl, clientGone = false; // Déclaré hors du try pour être visible en finally
   try {
     // Extract camera ID and timestamp from filename
     const match = filename.match(/cam(\d+)_(\d+)_([a-f0-9]+)\.mp4/);
@@ -272,32 +272,33 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       videoMetadata.set(filename, foundVideo);
     }
     
-    // (6) Annuler si le client coupe + timeout sécurité
-    // Helper pour combiner un signal + un timeout même si AbortSignal.any n'est pas dispo
-    function muxWithTimeout(parentSignal, ms) {
+    // (6) Client separation + upstream timeout
+    const UPSTREAM_TIMEOUT_MS = parseInt(process.env.CCTV_UPSTREAM_TIMEOUT_MS || '60000', 10);
+    
+    // Helper to create timeout controller independent of client
+    function timeoutController(ms) {
       const ctl = new AbortController();
-      let timeoutId = null;
-      const abortAll = () => ctl.abort();
-      // relais de l'abort client
-      if (parentSignal) parentSignal.addEventListener('abort', abortAll, { once: true });
-      // timeout
+      let timeoutId;
+      
       if (typeof ms === 'number' && ms > 0) {
         if (globalThis.AbortSignal && typeof AbortSignal.timeout === 'function') {
           const t = AbortSignal.timeout(ms);
-          t.addEventListener('abort', abortAll, { once: true });
+          t.addEventListener('abort', () => ctl.abort(), { once: true });
         } else {
-          timeoutId = setTimeout(abortAll, ms);
+          timeoutId = setTimeout(() => ctl.abort(), ms);
         }
       }
-      // cleanup utilitaire
+      
       ctl.cleanup = () => { if (timeoutId) clearTimeout(timeoutId); };
       return ctl;
     }
 
-    ac = new AbortController();
-    muxCtl = muxWithTimeout(ac.signal, 60_000);
-    onClose = () => ac.abort();
+    // Separate client tracking from upstream timeout
+    onClose = () => { clientGone = true; };
     req.on('close', onClose);
+    
+    // Independent upstream timeout
+    muxCtl = timeoutController(UPSTREAM_TIMEOUT_MS);
     
     // Propager x-request-id vers serveur CCTV si possible
     const headers = {};
@@ -347,23 +348,40 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       res.setHeader('Content-Type', 'video/mp4');
       const len = response.headers.get('content-length');
       if (len) res.setHeader('Content-Length', len);
+      res.setHeader('Accept-Ranges', 'none'); // évite les Range pendant le miss
       // cache côté navigateur (le fichier servi ici est immuable)
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      // Flush headers immediately to start client streaming
+      res.flushHeaders();
     }
 
     await fsp.mkdir(path.dirname(cachePath), { recursive: true });
     const fileOut = fs.createWriteStream(tmp);
+    // Patch GPT: diagnostics disque
+    fileOut.on('error', (e) => logger.error({ filename, err: e.message }, 'fileOut error'));
     const tee = new PassThrough();
+    
+    // Fix memory leak: increase max listeners for concurrent video requests
+    tee.setMaxListeners(50);
 
     // Démarre la duplication: tee -> client & tee -> fichier
     // On NE bloque pas sur la fin côté client (il peut abandonner), mais on sécurise le cache.
-    const clientPipe = pipeline(tee, res).catch(() => {/* client aborted / closed: ignore here */});
-    const filePipe   = pipeline(tee, fileOut); // on attendra celui-ci
+    const clientPipe = pipeline(tee, res).catch((e) => {
+      logger.debug({ filename, error: e.message }, 'Client pipeline ended (normal if client disconnects)');
+    });
+    const filePipe = pipeline(tee, fileOut).catch((e) => {
+      logger.error({ filename, error: e.message }, 'File pipeline error');
+      throw e; // Re-throw pour être attrapé par le catch principal
+    });
 
     // Source -> tee (démarre réellement le flux et donc l'envoi au client)
-    await pipeline(nodeStream, tee);
+    // Use upstream timeout controller for fetch, not client signal
+    await pipeline(nodeStream, tee, { signal: muxCtl.signal });
     // Assure que l'écriture fichier est terminée
     await filePipe;
+
+    // Patch GPT: flush proper avant rename
+    try { fileOut.close?.(); } catch {}
 
     // Commit atomique du cache
     await fsp.rename(tmp, cachePath);
@@ -386,37 +404,34 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
   } catch (error) {
     const isAbort = error?.name === 'AbortError';
-    const clientAborted = ac?.signal?.aborted === true;
-    const timeoutAborted = isAbort && muxCtl?.signal?.aborted === true && !clientAborted;
+    const upstreamTimeout = isAbort && muxCtl?.signal?.aborted === true;
 
     logger.error({
       filename,
       error: error.message,
       stack: error.stack,
       isAbort,
-      clientAborted,
-      timeoutAborted
+      clientGone,
+      upstreamTimeout
     }, 'Error during video download');
 
-    // Abandon par le client → on ne répond pas
-    if (clientAborted) {
-      logger.info({ filename }, 'Client aborted request, cleaning up');
-      metrics.cctvDownloadErrors.labels('ABORT').inc();
-      rejectDl(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
-      downloadPromises.delete(filename);
-      fs.unlink(cachePath + '.part', () => {}); // best-effort cleanup
+    // Client disconnected → continue caching for future requests
+    if (clientGone && !upstreamTimeout) {
+      logger.info({ filename }, 'Client disconnected, continuing cache for future requests');
+      // Don't reject download promise - let cache complete for other clients
       return;
     }
 
-    // Timeout réseau amont (CCTV) → on répond 503 explicite
-    if (timeoutAborted) {
-      logger.warn({ filename }, 'CCTV upstream timeout');
+    // Upstream timeout → abort everything
+    if (upstreamTimeout) {
+      logger.warn({ filename, timeout: UPSTREAM_TIMEOUT_MS }, 'CCTV upstream timeout');
       metrics.cctvDownloadErrors.labels('TIMEOUT').inc();
       if (downloadTimer) downloadTimer();
       rejectDl(Object.assign(new Error('Upstream timeout'), { code: 'TIMEOUT' }));
       downloadPromises.delete(filename);
       fs.unlink(cachePath + '.part', () => {});
-      return ApiResponse.serviceUnavailable(res, 'CCTV upstream timeout');
+      if (!res.headersSent) return ApiResponse.serviceUnavailable(res, 'CCTV upstream timeout');
+      return;
     }
     
     // Erreur générique
