@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-// Node >=18: utiliser le fetch natif, sinon node-fetch@2 (CJS) et garder require
-// (aucun import requis pour fetch natif)
+// Polyfill fetch pour compatibilité Node <18
+const fetchFn = globalThis.fetch || require('node-fetch');
 const { videoMetadata } = require('../utils/videoTools');
 const { CCTV } = require('../config/constants');
 const { authenticate } = require('../utils/auth');
@@ -11,12 +11,6 @@ const ApiResponse = require('../utils/responseFormatter');
 const downloadPromises = new Map(); // filename -> {promise, resolve, reject}
 const { pipeline } = require('stream/promises');
 
-// Helper to serve video from cache - let Express handle Range requests and Content-Type
-function serveFromCache(req, res, filename, cachePath) {
-  console.log(`✅ Serving cached video: ${filename}`);
-  // Laisse Express/send gérer Range & en-têtes automatiquement
-  return res.sendFile(cachePath);
-}
 
 // Download semaphore to limit concurrent CCTV server requests
 class DownloadSemaphore {
@@ -71,7 +65,7 @@ async function handleVideoRequest(req, res) {
   console.log(`📹 Video request: ${filename}`);
   
   // Try serving from cache first - let sendFile handle existence check and Content-Type
-  res.sendFile(cachePath, (err) => {
+  return res.sendFile(cachePath, (err) => {
     if (!err) {
       console.log(`✅ Served cached video: ${filename}`);
       return; // File served successfully
@@ -132,7 +126,9 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       
       if (!(cameraId in CCTV.cameras)) {
         console.error(`❌ Invalid camera ID: ${cameraId}`);
-        throw new Error('Invalid camera ID');
+        downloadPromises.delete(filename);
+        resolveDl();
+        return ApiResponse.notFound(res, 'Camera');
       }
       
       const cameraPath = CCTV.cameras[cameraId];
@@ -175,7 +171,9 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       
       if (!foundVideo) {
         console.error(`❌ Video not found on CCTV server: ${filename}`);
-        throw new Error('Video not found on CCTV server');
+        downloadPromises.delete(filename);
+        resolveDl();
+        return ApiResponse.notFound(res, 'Video not found on CCTV server');
       }
       
       // Use found video metadata
@@ -195,7 +193,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     const ac = new AbortController();
     req.on('close', () => ac.abort());
     
-    const response = await fetch(`${url}?${params}`, { signal: ac.signal });
+    const response = await fetchFn(`${url}?${params}`, { signal: ac.signal });
     if (!response.ok) {
       console.error(`❌ Failed to stream video: ${response.status} ${response.statusText}`);
       rejectDl(new Error(`Failed to stream video: ${response.status}`));
@@ -224,6 +222,16 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
   } catch (error) {
     console.error(`💥 Error handling video request:`, error);
+    
+    // Si le client est parti (abort), pas besoin de répondre
+    if (ac.signal.aborted) {
+      console.log(`🚫 Client aborted request for ${filename}, cleaning up...`);
+      downloadPromises.delete(filename);
+      // Clean up .part file if it exists
+      const tmpPath = cachePath + '.part';
+      fs.unlink(tmpPath, () => {}); // ignore errors
+      return; // client parti, inutile de répondre
+    }
     
     rejectDl(error);
     downloadPromises.delete(filename);
