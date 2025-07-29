@@ -20,59 +20,11 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-// Helper to serve video from cache with Range support
+// Helper to serve video from cache - let Express handle Range requests
 function serveFromCache(req, res, filename, cachePath) {
-  if (!fs.existsSync(cachePath)) {
-    console.error(`❌ Cache file not found: ${filename}`);
-    return ApiResponse.notFound(res, 'Video');
-  }
-
   console.log(`✅ Serving cached video: ${filename}`);
   res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Accept-Ranges', 'bytes');
-  
-  const stat = fs.statSync(cachePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
-  
-  if (range) {
-    console.log(`📡 Range request: ${range} for ${filename} (fileSize: ${fileSize})`);
-    const m = /^bytes=(\d*)-(\d*)$/.exec(range);
-    if (!m) return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-
-    let [, startStr, endStr] = m;
-    let start, end;
-
-    if (startStr === '' && endStr === '') {
-      return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-    } else if (startStr === '') {
-      // suffix range: last N bytes
-      const suffix = parseInt(endStr, 10);
-      start = Math.max(fileSize - suffix, 0);
-      end = fileSize - 1;
-    } else {
-      start = parseInt(startStr, 10);
-      end = endStr ? parseInt(endStr, 10) : fileSize - 1;
-    }
-
-    if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
-      return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-    }
-    
-    const actualEnd = Math.min(end, fileSize - 1);
-    const chunkSize = (actualEnd - start) + 1;
-    
-    console.log(`📊 Serving range: ${start}-${actualEnd}/${fileSize} (${chunkSize} bytes)`);
-    
-    const file = fs.createReadStream(cachePath, { start, end: actualEnd });
-    res.status(206);
-    res.setHeader('Content-Range', `bytes ${start}-${actualEnd}/${fileSize}`);
-    res.setHeader('Content-Length', chunkSize);
-    file.pipe(res);
-    return;
-  }
-  
-  // No range request - send full file
+  // Laisse Express/send gérer Range & en-têtes automatiquement
   return res.sendFile(cachePath);
 }
 
@@ -123,58 +75,22 @@ async function handleVideoRequest(req, res) {
   const cachePath = path.join(__dirname, '..', '..', 'static', 'cache', 'videos', filename);
   console.log(`📹 Video request: ${filename}`);
   
-  // Check if file exists - serve with proper headers like legacy
-  if (fs.existsSync(cachePath)) {
-    console.log(`✅ Serving cached video: ${filename}`);
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Accept-Ranges', 'bytes');
-    
-    // Handle Range requests manually for cached files
-    const stat = fs.statSync(cachePath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-    
-    if (range) {
-      console.log(`📡 Range request: ${range} for ${filename} (fileSize: ${fileSize})`);
-      const m = /^bytes=(\d*)-(\d*)$/.exec(range);
-      if (!m) return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-
-      let [, startStr, endStr] = m;
-      let start, end;
-
-      if (startStr === '' && endStr === '') {
-        return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-      } else if (startStr === '') {
-        // suffix range: last N bytes
-        const suffix = parseInt(endStr, 10);
-        start = Math.max(fileSize - suffix, 0);
-        end = fileSize - 1;
-      } else {
-        start = parseInt(startStr, 10);
-        end = endStr ? parseInt(endStr, 10) : fileSize - 1;
-      }
-
-      if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
-        return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-      }
-      
-      const actualEnd = Math.min(end, fileSize - 1);
-      const chunkSize = (actualEnd - start) + 1;
-      
-      console.log(`📊 Serving range: ${start}-${actualEnd}/${fileSize} (${chunkSize} bytes)`);
-      
-      const file = fs.createReadStream(cachePath, { start, end: actualEnd });
-      res.status(206);
-      res.setHeader('Content-Range', `bytes ${start}-${actualEnd}/${fileSize}`);
-      res.setHeader('Content-Length', chunkSize);
-      file.pipe(res);
-      return;
+  // Try serving from cache first - let sendFile handle existence check
+  res.setHeader('Content-Type', 'video/mp4');
+  res.sendFile(cachePath, (err) => {
+    if (!err) {
+      console.log(`✅ Served cached video: ${filename}`);
+      return; // File served successfully
     }
     
-    // No range request - send full file
-    return res.sendFile(cachePath);
-  }
-  
+    // File doesn't exist, proceed with download
+    console.log(`📹 Cache miss for ${filename}, starting download...`);
+    handleVideoDownload(req, res, filename, cachePath);
+  });
+}
+
+// Separated download logic to avoid nested function complexity
+async function handleVideoDownload(req, res, filename, cachePath) {
   // (3) Si un téléchargement identique est déjà en cours, attendre la même promesse
   const existing = downloadPromises.get(filename);
   if (existing) {
@@ -299,8 +215,8 @@ async function handleVideoRequest(req, res) {
     const { Readable } = require('node:stream');
     const tmp = cachePath + '.part';
     
-    // Compatibilité infaillible : Web Stream → Node Stream si nécessaire
-    const nodeStream = response.body?.getReader ? Readable.fromWeb(response.body) : response.body;
+    // Conversion Web Stream → Node Stream (Node ≥18 idiomatique)
+    const nodeStream = Readable.fromWeb(response.body);
     await pipeline(nodeStream, fs.createWriteStream(tmp));
     await fsp.rename(tmp, cachePath);
     
