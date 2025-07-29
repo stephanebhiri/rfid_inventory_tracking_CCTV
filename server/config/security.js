@@ -10,7 +10,7 @@ const cors = require('cors');
 const createRateLimiter = () => {
   return rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX) || 1000, // limit each IP to 1000 requests per windowMs (compatible with 5s auto-refresh)
+    max: parseInt(process.env.RATE_LIMIT_MAX) || 10000, // limit each IP to 10000 requests per windowMs (very high limit for single-user system)
     message: {
       error: 'Too many requests',
       message: 'Rate limit exceeded. Please try again later.',
