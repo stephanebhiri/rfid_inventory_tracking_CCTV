@@ -33,8 +33,29 @@ const WS_ALLOWED_ORIGINS = (process.env.WS_ALLOWED_ORIGINS || '')
 // Limitation de connexions WebSocket par IP (configurable)
 const MAX_WS_PER_IP = Number(process.env.WS_MAX_PER_IP || 5);
 
-process.on('unhandledRejection', (reason) => logger.error({ reason }, 'unhandledRejection'));
-process.on('uncaughtException', (err) => { logger.error({ err }, 'uncaughtException'); process.exit(1); });
+// Orchestration d'arrêt propre en cas d'erreurs fatales
+let __shuttingDown = false;
+function requestShutdown(tag, detail) {
+  if (__shuttingDown) return;
+  __shuttingDown = true;
+  logger.error({ tag, detail }, 'fatal error - initiating graceful shutdown');
+  try { graceful(); } catch (e) {
+    logger.warn({ err: e?.message }, 'graceful() threw');
+  }
+  // Forcer la sortie si jamais ça bloque
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+
+process.on('unhandledRejection', (reason, p) => {
+  logger.error({ reason: String(reason) }, 'unhandledRejection');
+  requestShutdown('unhandledRejection', { reason: String(reason) });
+});
+
+process.on('uncaughtException', (err) => {
+  // Après uncaughtException, l'état peut être corrompu → on sort proprement
+  logger.error({ err }, 'uncaughtException');
+  requestShutdown('uncaughtException', { message: err?.message, name: err?.name });
+});
 
 const app = express();
 
@@ -341,6 +362,7 @@ realtimeService.initialize().catch(err => {
 
 // Graceful shutdown handling (HTTP + WS)
 async function graceful() {
+  if (__shuttingDown) { /* idempotent */ } else { __shuttingDown = true; }
   logger.info('Shutting down gracefully');
   try { await realtimeService.shutdown(); } catch (e) {
     logger.warn({ err: e?.message }, 'realtimeService shutdown warning');
@@ -351,7 +373,9 @@ async function graceful() {
   } catch {}
   server.close(() => {
     logger.info('HTTP server closed');
-    process.exit(0);
+    // Laisser le process vivant si shutdown volontaire (SIGTERM/SIGINT),
+    // mais requestShutdown forcera exit(1) après 5s dans le cas fatal.
+    if (!__shuttingDown) process.exit(0);
   });
 }
 process.on('SIGTERM', graceful);

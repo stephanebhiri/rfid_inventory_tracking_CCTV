@@ -94,7 +94,8 @@ async function handleVideoRequest(req, res) {
     
     if (err.code && err.code !== 'ENOENT') {
       logger.error({ filename, error: err.message, code: err.code }, 'SendFile error');
-      return ApiResponse.internalError(res, 'File send error');
+      if (!res.headersSent) return ApiResponse.internalError(res, 'File send error');
+      return;
     }
     
     // Cache MISS - métriques & logs
@@ -409,7 +410,8 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     const tmpPath = cachePath + '.part';
     fs.unlink(tmpPath, () => {}); // ignore errors
     
-    return ApiResponse.internalError(res, error);
+    if (!res.headersSent) return ApiResponse.internalError(res, error);
+    return;
   } finally {
     // *** MÉTRIQUES: décrémenter downloads in progress seulement si incrémenté ***
     if (downloadGaugeRaised) {
