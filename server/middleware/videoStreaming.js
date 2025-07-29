@@ -3,6 +3,7 @@ const path = require('path');
 // Polyfill fetch pour compatibilité Node <18
 // Note: Pour Node <18, assurez-vous d'utiliser node-fetch@2 (CJS) car v3 est ESM-only
 const fetchFn = globalThis.fetch || require('node-fetch');
+const onFinished = require('on-finished');
 const { videoMetadata } = require('../utils/videoTools');
 const { CCTV } = require('../config/constants');
 const { authenticate } = require('../utils/auth');
@@ -15,6 +16,9 @@ const { metrics } = require('../metrics');
 const downloadPromises = new Map(); // filename -> {promise, resolve, reject}
 const { pipeline } = require('stream/promises');
 
+// Options de cache communes pour toutes les réponses sendFile
+const SEND_OPTS = { maxAge: '365d', immutable: true };
+
 
 // Download semaphore to limit concurrent CCTV server requests
 class DownloadSemaphore {
@@ -22,24 +26,25 @@ class DownloadSemaphore {
     this.maxConcurrent = maxConcurrent;
     this.current = 0;
     this.waiting = [];
+    this.log = (global.logger?.child?.({ mod: 'semaphore' })) || console;
   }
 
   async acquire() {
     if (this.current < this.maxConcurrent) {
       this.current++;
-      console.log(`🔒 Download slot acquired (${this.current}/${this.maxConcurrent})`);
+      this.log.debug?.({ current: this.current, max: this.maxConcurrent }, 'Download slot acquired');
       return;
     }
     
-    console.log(`⏳ Waiting for download slot (${this.current}/${this.maxConcurrent}, ${this.waiting.length} queued)`);
+    this.log.debug?.({ current: this.current, max: this.maxConcurrent, queued: this.waiting.length }, 'Waiting for download slot');
     await new Promise(resolve => this.waiting.push(resolve));
     this.current++;
-    console.log(`🔒 Download slot acquired after wait (${this.current}/${this.maxConcurrent})`);
+    this.log.debug?.({ current: this.current, max: this.maxConcurrent }, 'Download slot acquired after wait');
   }
 
   release() {
     this.current--;
-    console.log(`🔓 Download slot released (${this.current}/${this.maxConcurrent})`);
+    this.log.debug?.({ current: this.current, max: this.maxConcurrent }, 'Download slot released');
     if (this.waiting.length > 0) {
       const next = this.waiting.shift();
       next();
@@ -66,18 +71,18 @@ async function handleVideoRequest(req, res) {
   const root = path.resolve(path.join(__dirname, '..', '..', 'static', 'cache', 'videos'));
   const abs = path.resolve(cachePath);
   if (!abs.startsWith(root + path.sep)) return ApiResponse.notFound(res, 'Video');
-  // Métriques: incrémenter les requêtes concurrentes
-  metrics.cctvConcurrentRequests.inc();
   const requestStart = Date.now();
   
   // Log structuré: requête vidéo reçue
   const logger = req.log || console;
   logger.info({ filename, requestId: req.id }, 'Video request received');
   
-  // Try serving from cache first - let sendFile handle existence check and Content-Type
-  return res.sendFile(cachePath, (err) => {
-    // Cleanup: décrémenter les requêtes concurrentes à la fin
-    metrics.cctvConcurrentRequests.dec();
+  // Compteur de requêtes concurrentes, garanti jusqu'à la fin de la réponse
+  metrics.cctvConcurrentRequests.inc();
+  onFinished(res, () => metrics.cctvConcurrentRequests.dec());
+
+  // Try serving from cache first - let sendFile handle existence & Content-Type
+  return res.sendFile(cachePath, SEND_OPTS, (err) => {
     
     if (!err) {
       // Cache HIT - métriques & logs
@@ -96,11 +101,7 @@ async function handleVideoRequest(req, res) {
     metrics.cctvCacheMisses.inc();
     logger.info({ filename }, 'Cache miss - starting download');
     
-    // Re-incrémenter car handleVideoDownload va gérer sa propre durée
-    metrics.cctvConcurrentRequests.inc();
-    
     handleVideoDownload(req, res, filename, cachePath).catch(e => {
-      metrics.cctvConcurrentRequests.dec();
       logger.error({ filename, error: e.message }, 'Download failed');
       if (!res.headersSent) ApiResponse.internalError(res, e);
     });
@@ -111,6 +112,8 @@ async function handleVideoRequest(req, res) {
 async function handleVideoDownload(req, res, filename, cachePath) {
   const logger = req.log || console;
   const requestStart = Date.now();
+  let downloadGaugeRaised = false;
+  let downloadTimer = null;
   
   // (3) Si un téléchargement identique est déjà en cours, attendre la même promesse
   const existing = downloadPromises.get(filename);
@@ -118,10 +121,14 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     logger.info({ filename }, 'Waiting for existing download to complete');
     try {
       await existing.promise;
-      metrics.videoRequestDuration.labels('miss').observe((Date.now() - requestStart) / 1000);
+      metrics.videoRequestDuration.labels('miss_joined').observe((Date.now() - requestStart) / 1000);
       logger.info({ filename }, 'Existing download completed, serving from cache');
-      return res.sendFile(cachePath, err => {
+      return res.sendFile(cachePath, SEND_OPTS, err => {
         if (err) {
+          if (err.code === 'ENOENT') {
+            logger.info({ filename }, 'Cache disappeared, retrying download');
+            return handleVideoDownload(req, res, filename, cachePath);
+          }
           logger.error({ filename, error: err.message }, 'Error serving file after wait');
           return ApiResponse.notFound(res, 'Video');
         }
@@ -153,7 +160,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
   // (5) Slot de téléchargement
   await downloadSemaphore.acquire();
   
-  let ac, onClose; // Déclaration hors du try pour accès dans catch et finally
+  let ac, onClose, muxCtl; // Déclaré hors du try pour être visible en finally
   try {
     // Extract camera ID and timestamp from filename
     const match = filename.match(/cam(\d+)_(\d+)_([a-f0-9]+)\.mp4/);
@@ -205,7 +212,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       // Calculate date and hour from timestamp
       const { date, hour } = formatDatePath(timestamp);
       
-      console.log(`🔍 Searching for video in camera ${cameraId} path: ${cameraPath}/${date}/${hour}`);
+      logger.debug({ filename, cameraId, path: `${cameraPath}/${date}/${hour}` }, 'Searching for video in CCTV path');
       
       let foundVideo = null;
       
@@ -263,8 +270,30 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       videoMetadata.set(filename, foundVideo);
     }
     
-    // (6) Annuler si le client coupe
+    // (6) Annuler si le client coupe + timeout sécurité
+    // Helper pour combiner un signal + un timeout même si AbortSignal.any n'est pas dispo
+    function muxWithTimeout(parentSignal, ms) {
+      const ctl = new AbortController();
+      let timeoutId = null;
+      const abortAll = () => ctl.abort();
+      // relais de l'abort client
+      if (parentSignal) parentSignal.addEventListener('abort', abortAll, { once: true });
+      // timeout
+      if (typeof ms === 'number' && ms > 0) {
+        if (globalThis.AbortSignal && typeof AbortSignal.timeout === 'function') {
+          const t = AbortSignal.timeout(ms);
+          t.addEventListener('abort', abortAll, { once: true });
+        } else {
+          timeoutId = setTimeout(abortAll, ms);
+        }
+      }
+      // cleanup utilitaire
+      ctl.cleanup = () => { if (timeoutId) clearTimeout(timeoutId); };
+      return ctl;
+    }
+
     ac = new AbortController();
+    muxCtl = muxWithTimeout(ac.signal, 60_000);
     onClose = () => ac.abort();
     req.on('close', onClose);
     
@@ -276,7 +305,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     }
     
     const response = await fetchFn(`${url}?${params}`, { 
-      signal: ac.signal,
+      signal: muxCtl.signal,
       headers 
     });
     
@@ -297,7 +326,8 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     // *** MÉTRIQUES CRITIQUES: début de téléchargement ***
     metrics.cctvDownloadsInProgress.inc();
-    const downloadTimer = metrics.cctvDownloadDuration.startTimer();
+    downloadGaugeRaised = true;
+    downloadTimer = metrics.cctvDownloadDuration.startTimer();
     
     // (7) Écriture atomique + pipeline
     logger.info({ filename, contentLength: response.headers.get('content-length') }, 'Starting video pipeline download');
@@ -326,34 +356,52 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       requestId: req.id 
     }, 'Video download completed successfully');
     
-    metrics.videoRequestDuration.labels('miss').observe(duration / 1000);
+    metrics.videoRequestDuration.labels('miss_fresh').observe(duration / 1000);
     
     resolveDl();
     downloadPromises.delete(filename);
-    return res.sendFile(cachePath);
+    return res.sendFile(cachePath, SEND_OPTS);
     
   } catch (error) {
-    logger.error({ 
-      filename, 
-      error: error.message, 
+    const isAbort = error?.name === 'AbortError';
+    const clientAborted = ac?.signal?.aborted === true;
+    const timeoutAborted = isAbort && muxCtl?.signal?.aborted === true && !clientAborted;
+
+    logger.error({
+      filename,
+      error: error.message,
       stack: error.stack,
-      aborted: ac?.signal?.aborted 
+      isAbort,
+      clientAborted,
+      timeoutAborted
     }, 'Error during video download');
-    
-    // Si le client est parti (abort), pas besoin de répondre
-    if (ac?.signal?.aborted) {
+
+    // Abandon par le client → on ne répond pas
+    if (clientAborted) {
       logger.info({ filename }, 'Client aborted request, cleaning up');
       metrics.cctvDownloadErrors.labels('ABORT').inc();
       rejectDl(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
       downloadPromises.delete(filename);
-      // Clean up .part file if it exists
-      const tmpPath = cachePath + '.part';
-      fs.unlink(tmpPath, () => {}); // ignore errors
-      return; // client parti, inutile de répondre
+      fs.unlink(cachePath + '.part', () => {}); // best-effort cleanup
+      return;
+    }
+
+    // Timeout réseau amont (CCTV) → on répond 503 explicite
+    if (timeoutAborted) {
+      logger.warn({ filename }, 'CCTV upstream timeout');
+      metrics.cctvDownloadErrors.labels('TIMEOUT').inc();
+      if (downloadTimer) downloadTimer();
+      rejectDl(Object.assign(new Error('Upstream timeout'), { code: 'TIMEOUT' }));
+      downloadPromises.delete(filename);
+      fs.unlink(cachePath + '.part', () => {});
+      return ApiResponse.serviceUnavailable(res, 'CCTV upstream timeout');
     }
     
     // Erreur générique
     metrics.cctvDownloadErrors.labels('UNKNOWN').inc();
+    // Si le timer de download a été démarré, le stopper aussi en erreur
+    if (downloadTimer) downloadTimer();
+
     rejectDl(error);
     downloadPromises.delete(filename);
     
@@ -363,13 +411,18 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     return ApiResponse.internalError(res, error);
   } finally {
-    // *** MÉTRIQUES: toujours décrémenter downloads in progress ***
-    metrics.cctvDownloadsInProgress.dec();
-    // Décrémenter aussi les requêtes concurrentes
-    metrics.cctvConcurrentRequests.dec();
-    
-    // Nettoyage systématique du listener
-    req.off?.('close', onClose);
+    // *** MÉTRIQUES: décrémenter downloads in progress seulement si incrémenté ***
+    if (downloadGaugeRaised) {
+      metrics.cctvDownloadsInProgress.dec();
+    }
+    // Nettoyage timeout combiné
+    try { muxCtl?.cleanup?.(); } catch {}
+
+    // Nettoyage systématique du listener (fallback removeListener)
+    if (onClose) {
+      if (typeof req.off === 'function') req.off('close', onClose);
+      else if (typeof req.removeListener === 'function') req.removeListener('close', onClose);
+    }
     // Always release semaphore
     downloadSemaphore.release();
   }
