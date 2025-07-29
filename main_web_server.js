@@ -33,7 +33,19 @@ const WS_ALLOWED_ORIGINS = (process.env.WS_ALLOWED_ORIGINS || '')
 // Limitation de connexions WebSocket par IP (configurable)
 const MAX_WS_PER_IP = Number(process.env.WS_MAX_PER_IP || 5);
 
-// Orchestration d'arrêt propre en cas d'erreurs fatales
+// === [Début PATCH erreurs "bénignes"] ======================================
+function isBenignStreamError(e) {
+  const s = (e && (e.code || e.name || e.message)) ? String(e.code || e.name || e.message) : String(e || '');
+  return (
+    s.includes('ERR_STREAM_PREMATURE_CLOSE') ||
+    s.includes('ECONNRESET') ||
+    s.includes('EPIPE') ||
+    s.includes('client premature') ||
+    s.includes('socket hang up') ||
+    s.includes('write EPIPE')
+  );
+}
+
 let __shuttingDown = false;
 function requestShutdown(tag, detail) {
   if (__shuttingDown) return;
@@ -42,20 +54,27 @@ function requestShutdown(tag, detail) {
   try { graceful(); } catch (e) {
     logger.warn({ err: e?.message }, 'graceful() threw');
   }
-  // Forcer la sortie si jamais ça bloque
   setTimeout(() => process.exit(1), 5000).unref();
 }
 
-process.on('unhandledRejection', (reason, p) => {
-  logger.error({ reason: String(reason) }, 'unhandledRejection');
+process.on('unhandledRejection', (reason) => {
+  if (isBenignStreamError(reason)) {
+    logger.warn({ reason: String(reason) }, 'unhandledRejection (benign, ignored)');
+    return; // NE PAS shut down sur erreurs réseau normales
+  }
+  logger.error({ reason: String(reason), stack: reason?.stack }, 'unhandledRejection (fatal)');
   requestShutdown('unhandledRejection', { reason: String(reason) });
 });
 
 process.on('uncaughtException', (err) => {
-  // Après uncaughtException, l'état peut être corrompu → on sort proprement
-  logger.error({ err }, 'uncaughtException');
+  if (isBenignStreamError(err)) {
+    logger.warn({ err: err?.message }, 'uncaughtException (benign, ignored)');
+    return; // NE PAS shut down sur erreurs réseau normales
+  }
+  logger.error({ err: err?.message, stack: err?.stack }, 'uncaughtException (fatal)');
   requestShutdown('uncaughtException', { message: err?.message, name: err?.name });
 });
+// === [Fin PATCH erreurs "bénignes"] =========================================
 
 const app = express();
 
@@ -129,10 +148,12 @@ const server = http.createServer(app);
 const config = getCurrentConfig();
 const PORT = config.server.port || 3002;
 const HOST = config.server.host || '0.0.0.0';
-// Durcissement timeouts HTTP
+// Durcissement timeouts HTTP + performance
 server.keepAliveTimeout = 65_000;
 server.headersTimeout   = 66_000;
-// server.requestTimeout   = 0; // optionnel : pas de timeout global
+server.requestTimeout   = 0; // pas de timeout de requête (Nginx garde 300s)
+server.maxConnections   = 0; // illimité (géré par Nginx)
+server.timeout         = 0;  // pas de timeout socket (géré par Nginx)
 
 // Initialize WebSocket server
 const wss = new WebSocket.Server({ 
@@ -233,8 +254,18 @@ app.use('/static', express.static(path.join(__dirname, 'static'), {
   immutable: true,
 }));
 
-// SPA fallback (ne touche pas /api, /static, /ws)
-app.get(/^\/(?!api\/|static\/|ws($|\/)).*/, (req, res) => {
+// Temporary source code access for AI tools (remove in production)
+app.use('/source', express.static(path.join(__dirname, 'public_source_view'), {
+  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.md') || filePath.endsWith('.js') || filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    }
+  }
+}));
+
+// SPA fallback (ne touche pas /api, /static, /ws, /source)
+app.get(/^\/(?!api\/|static\/|ws($|\/)|source\/).*/, (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
@@ -356,11 +387,23 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
-// Initialize realtime service
-realtimeService.initialize().catch(err => {
-  logger.error({ error: err.message, stack: err.stack }, 'Failed to initialize realtime service');
-  process.exit(1);
-});
+// === [Début PATCH init realtime avec retry] =================================
+(async function initRealtimeWithRetry() {
+  let attempt = 0;
+  for (;;) {
+    try {
+      await realtimeService.initialize();
+      logger.info('Realtime service initialized');
+      break;
+    } catch (err) {
+      attempt++;
+      const delay = Math.min(30000, 1000 * Math.pow(2, attempt)); // 1s -> 2s -> ... -> 30s
+      logger.warn({ err: err.message, attempt }, `Realtime init failed, retrying in ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+})();
+// === [Fin PATCH init realtime avec retry] ===================================
 
 // Graceful shutdown handling (HTTP + WS)
 async function graceful() {
@@ -383,12 +426,13 @@ async function graceful() {
 process.on('SIGTERM', graceful);
 process.on('SIGINT', graceful);
 
-// Start the server
-server.listen(PORT, HOST, () => {
+// Start the server with reasonable backlog for concurrent connections
+server.listen(PORT, HOST, 2048, () => {  // backlog: 2048 pending connections
   logger.info({ 
     host: HOST, 
     port: PORT, 
     websocketPath: '/ws',
+    backlog: 2048,
     env: process.env.NODE_ENV || 'development'
   }, 'RFID Server with WebSocket started successfully');
 });

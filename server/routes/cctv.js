@@ -18,16 +18,16 @@ router.get('/videos',
     const targetTimestamp = parseInt(target);
     const cameraId = parseInt(camera);
     
-    loggers.cctv.request(cameraId, targetTimestamp, req.correlationId);
+    logger.info('CCTV video request', { cameraId, targetTimestamp, correlationId: req.correlationId });
     
     // Get videos for the camera
     const result = await getVideosForCamera(targetTimestamp, cameraId, req.correlationId);
     
     // Log camera status
     if (result.cameraAvailable) {
-      loggers.cctv.videoFound(cameraId, result.videos.length, req.correlationId);
+      logger.info('CCTV videos found', { cameraId, videoCount: result.videos.length, correlationId: req.correlationId });
     } else {
-      loggers.cctv.cameraError(cameraId, result.cameraError, req.correlationId);
+      logger.warn('CCTV camera error', { cameraId, error: result.cameraError, correlationId: req.correlationId });
     }
     
     // Build response in required format
