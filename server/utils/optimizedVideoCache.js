@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { LRUCache } = require('lru-cache');
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 const { metricsCollector } = require('../middleware/metrics');
 
 /**

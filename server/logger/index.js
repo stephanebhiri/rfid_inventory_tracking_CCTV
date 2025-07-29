@@ -1,27 +1,25 @@
 const pino = require('pino');
 
-// Configuration du logger Pino avec redaction des données sensibles
+const isDev = process.env.NODE_ENV !== 'production';
+
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
-  
-  // Redaction des champs sensibles pour la sécurité
+  // Masque les données sensibles
   redact: {
     paths: [
       'authorization',
-      'cookie', 
+      'cookie',
       'sid',
       'req.headers.authorization',
       'req.headers.cookie',
       'res.headers["set-cookie"]',
-      // Redaction spécifique aux paramètres CCTV
       'req.query.sid',
-      'req.body.sid'
+      'req.body.sid',
     ],
     censor: '***REDACTED***'
   },
-
-  // Formatage pour la production (JSON) ou développement
-  ...(!process.env.NODE_ENV || process.env.NODE_ENV === 'development') ? {
+  // Pretty en dev uniquement
+  ...(isDev ? {
     transport: {
       target: 'pino-pretty',
       options: {
@@ -30,16 +28,22 @@ const logger = pino({
         translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l'
       }
     }
-  } : {},
-
-  // Informations de base
-  base: {
-    service: 'rfid-inventory-cctv',
-    version: process.env.npm_package_version || '1.0.0'
-  },
-
-  // Horodatage
+  } : {}),
+  // Métadonnées utiles en prod (facultatif)
+  ...(isDev ? { base: undefined } : {
+    base: {
+      service: 'rfid-inventory-cctv',
+      version: process.env.npm_package_version || '1.0.0'
+    }
+  }),
   timestamp: pino.stdTimeFunctions.isoTime
 });
 
-module.exports = logger;
+// Export hybride
+module.exports = logger;                 // require('../logger')
+module.exports.logger = logger;          // const { logger } = require('../logger')
+module.exports.loggers = {               // compat { loggers }
+  main: logger,
+  access: logger,
+  error: logger
+};

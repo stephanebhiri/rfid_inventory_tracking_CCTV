@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../config/database');
 const { validators, handleValidationErrors } = require('../middleware/validation');
 const ApiResponse = require('../utils/responseFormatter');
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 
 /**
  * Get inventory history with optimized query

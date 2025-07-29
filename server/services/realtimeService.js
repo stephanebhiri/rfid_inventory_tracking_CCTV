@@ -1,5 +1,5 @@
 const redis = require('redis');
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 
 class RealtimeService {
   constructor() {

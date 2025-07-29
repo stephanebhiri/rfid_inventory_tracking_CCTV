@@ -1,4 +1,4 @@
-const { logger } = require('../config/logger');
+const { logger } = require('../logger');
 const onFinished = require('on-finished');
 
 /**
