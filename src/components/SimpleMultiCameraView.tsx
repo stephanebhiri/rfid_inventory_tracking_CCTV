@@ -366,7 +366,7 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
       </div>
 
       {/* Controls - Single Row Layout */}
-      <div className="stack-horizontal stack-gap-medium">
+      <div className="cctv-controls">
         <div className="stack-horizontal stack-gap-medium">
           <button 
             onClick={goToPrevious}
