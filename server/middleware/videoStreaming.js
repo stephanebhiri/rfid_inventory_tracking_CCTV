@@ -37,14 +37,26 @@ function serveFromCache(req, res, filename, cachePath) {
   
   if (range) {
     console.log(`📡 Range request: ${range} for ${filename} (fileSize: ${fileSize})`);
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    
-    if (isNaN(start) || start >= fileSize) {
-      console.error(`❌ Invalid range start: ${start} >= ${fileSize}`);
-      res.status(416).send('Range Not Satisfiable');
-      return;
+    const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!m) return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+
+    let [, startStr, endStr] = m;
+    let start, end;
+
+    if (startStr === '' && endStr === '') {
+      return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+    } else if (startStr === '') {
+      // suffix range: last N bytes
+      const suffix = parseInt(endStr, 10);
+      start = Math.max(fileSize - suffix, 0);
+      end = fileSize - 1;
+    } else {
+      start = parseInt(startStr, 10);
+      end = endStr ? parseInt(endStr, 10) : fileSize - 1;
+    }
+
+    if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
+      return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
     }
     
     const actualEnd = Math.min(end, fileSize - 1);
@@ -124,14 +136,26 @@ async function handleVideoRequest(req, res) {
     
     if (range) {
       console.log(`📡 Range request: ${range} for ${filename} (fileSize: ${fileSize})`);
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      
-      if (isNaN(start) || start >= fileSize) {
-        console.error(`❌ Invalid range start: ${start} >= ${fileSize}`);
-        res.status(416).send('Range Not Satisfiable');
-        return;
+      const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!m) return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+
+      let [, startStr, endStr] = m;
+      let start, end;
+
+      if (startStr === '' && endStr === '') {
+        return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+      } else if (startStr === '') {
+        // suffix range: last N bytes
+        const suffix = parseInt(endStr, 10);
+        start = Math.max(fileSize - suffix, 0);
+        end = fileSize - 1;
+      } else {
+        start = parseInt(startStr, 10);
+        end = endStr ? parseInt(endStr, 10) : fileSize - 1;
+      }
+
+      if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
+        return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
       }
       
       const actualEnd = Math.min(end, fileSize - 1);
