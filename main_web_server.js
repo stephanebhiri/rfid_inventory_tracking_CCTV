@@ -10,6 +10,7 @@ const compression = require('compression');
 const pinoHttp = require('pino-http');
 const logger = require('./server/logger');
 const { logger: oldLogger } = require('./server/config/logger');
+const { register: metricsRegister } = require('./server/metrics');
 const inputRoutes = require('./server/routes/input');
 const { getCurrentConfig } = require('./server/config/environment');
 const realtimeService = require('./server/services/realtimeService');
@@ -114,6 +115,18 @@ app.use('/api', inputRoutes);
 
 // Monitoring and health check routes
 app.use('/api/monitoring', monitoringRoutes);
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', metricsRegister.contentType);
+    const metrics = await metricsRegister.metrics();
+    res.end(metrics);
+  } catch (error) {
+    req.log.error({ error: error.message }, 'Error generating Prometheus metrics');
+    res.status(500).end('Error generating metrics');
+  }
+});
 
 // Static files - serve from build directory
 app.use(express.static(path.join(__dirname, 'build')));
