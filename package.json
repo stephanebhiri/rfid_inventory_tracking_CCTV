@@ -39,7 +39,10 @@
     "test:coverage": "jest tests/ --testEnvironment=node --coverage",
     "eject": "react-scripts eject",
     "server": "node server/index.js",
-    "dev": "concurrently --kill-others-on-fail \"npm run server\" \"npm start\""
+    "dev": "concurrently --kill-others-on-fail \"npm run server\" \"npm start\"",
+    "dev:pretty": "NODE_ENV=development node main_web_server.js | pino-pretty",
+    "logs:follow": "pm2 logs actinvent8-web-server --lines 100 -f",
+    "metrics:watch": "watch -n 2 'curl -s http://localhost:3002/metrics | grep cctv'"
   },
   "eslintConfig": {
     "extends": [
