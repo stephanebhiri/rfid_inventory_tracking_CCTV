@@ -167,6 +167,10 @@ const wsHeartbeatInterval = setInterval(() => {
 }, 30_000);
 wss.on('close', () => clearInterval(wsHeartbeatInterval));
 
+wss.on('error', (err) => {
+  logger.error({ err: err.message, stack: err.stack }, 'WebSocket server error');
+});
+
 // Middleware to parse JSON and urlencoded data
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -217,9 +221,9 @@ app.use('/static/cache/videos', (req, res, next) => {
 // - index.html        → no-store pour forcer la dernière version
 app.use(express.static(path.join(__dirname, 'build'), {
   setHeaders(res, filePath) {
-    if (filePath.endsWith(path.sep + 'index.html')) {
+    if (path.basename(filePath) === 'index.html') {
       res.setHeader('Cache-Control', 'no-store');
-    } else if (filePath.includes(path.join('build', 'static') + path.sep)) {
+    } else if (filePath.includes(`${path.sep}build${path.sep}static${path.sep}`)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
   },
@@ -235,12 +239,10 @@ app.get(/^\/(?!api\/|static\/|ws($|\/)).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-// Helper robuste pour récupérer/normaliser l'IP client
 function getClientIP(req) {
-  const xff = req.headers['x-forwarded-for'];
-  let ip = xff ? String(xff).split(',')[0].trim() : req.socket.remoteAddress;
-  if (ip && ip.startsWith('::ffff:')) ip = ip.slice(7); // IPv6-mapped IPv4
-  return ip;
+  // Express calcule req.ip en tenant compte de trust proxy
+  const ip = req.ip || req.socket.remoteAddress || '';
+  return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
 }
 
 // History endpoint from the original server
