@@ -82,8 +82,17 @@ async function handleVideoDownload(req, res, filename, cachePath) {
   // (3) Si un téléchargement identique est déjà en cours, attendre la même promesse
   const existing = downloadPromises.get(filename);
   if (existing) {
-    await existing.promise;
-    return res.sendFile(cachePath);
+    try {
+      await existing.promise;
+    } catch (e) {
+      if (e?.code === 'VIDEO_NOT_FOUND') return ApiResponse.notFound(res, 'Video not found on CCTV server');
+      if (e?.code === 'INVALID_CAMERA') return ApiResponse.notFound(res, 'Camera');
+      if (e?.name === 'AbortError') return; // client parti, on ne répond pas
+      return ApiResponse.serviceUnavailable(res, 'Video download failed');
+    }
+    return res.sendFile(cachePath, err => {
+      if (err) return ApiResponse.notFound(res, 'Video');
+    });
   }
   
   // (4) Enregistrer la promesse AVANT tout await (source of truth)
@@ -94,6 +103,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
   // (5) Slot de téléchargement
   await downloadSemaphore.acquire();
   
+  let ac; // Déclaration hors du try pour accès dans catch
   try {
     // Extract camera ID and timestamp from filename
     const match = filename.match(/cam(\d+)_(\d+)_([a-f0-9]+)\.mp4/);
@@ -126,8 +136,9 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       
       if (!(cameraId in CCTV.cameras)) {
         console.error(`❌ Invalid camera ID: ${cameraId}`);
+        const errCam = Object.assign(new Error('Invalid camera ID'), { code: 'INVALID_CAMERA' });
+        rejectDl(errCam);
         downloadPromises.delete(filename);
-        resolveDl();
         return ApiResponse.notFound(res, 'Camera');
       }
       
@@ -171,8 +182,9 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       
       if (!foundVideo) {
         console.error(`❌ Video not found on CCTV server: ${filename}`);
+        const errNF = Object.assign(new Error('Video not found on CCTV server'), { code: 'VIDEO_NOT_FOUND' });
+        rejectDl(errNF);
         downloadPromises.delete(filename);
-        resolveDl();
         return ApiResponse.notFound(res, 'Video not found on CCTV server');
       }
       
@@ -190,13 +202,16 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     }
     
     // (6) Annuler si le client coupe
-    const ac = new AbortController();
-    req.on('close', () => ac.abort());
+    ac = new AbortController();
+    const onClose = () => ac.abort();
+    req.on('close', onClose);
     
     const response = await fetchFn(`${url}?${params}`, { signal: ac.signal });
     if (!response.ok) {
       console.error(`❌ Failed to stream video: ${response.status} ${response.statusText}`);
-      rejectDl(new Error(`Failed to stream video: ${response.status}`));
+      const err = new Error(`Failed to stream video: ${response.status}`);
+      err.code = 'UPSTREAM_ERROR';
+      rejectDl(err);
       downloadPromises.delete(filename);
       return ApiResponse.serviceUnavailable(res, 'Video streaming service', `HTTP ${response.status}`);
     }
@@ -216,6 +231,9 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     console.log(`💾 Video download completed: ${filename}`);
     
+    // Retirer le listener si tout va bien
+    req.off?.('close', onClose);
+    
     resolveDl();
     downloadPromises.delete(filename);
     return res.sendFile(cachePath);
@@ -224,8 +242,9 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     console.error(`💥 Error handling video request:`, error);
     
     // Si le client est parti (abort), pas besoin de répondre
-    if (ac.signal.aborted) {
+    if (ac?.signal?.aborted) {
       console.log(`🚫 Client aborted request for ${filename}, cleaning up...`);
+      rejectDl(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
       downloadPromises.delete(filename);
       // Clean up .part file if it exists
       const tmpPath = cachePath + '.part';
