@@ -8,6 +8,9 @@ const { CCTV } = require('../config/constants');
 const { authenticate } = require('../utils/auth');
 const ApiResponse = require('../utils/responseFormatter');
 
+// Import des métriques pour l'observabilité
+const { metrics } = require('../metrics');
+
 // Promise-based download tracking - single source of truth
 const downloadPromises = new Map(); // filename -> {promise, resolve, reject}
 const { pipeline } = require('stream/promises');
@@ -63,23 +66,42 @@ async function handleVideoRequest(req, res) {
   const root = path.resolve(path.join(__dirname, '..', '..', 'static', 'cache', 'videos'));
   const abs = path.resolve(cachePath);
   if (!abs.startsWith(root + path.sep)) return ApiResponse.notFound(res, 'Video');
-  console.log(`📹 Video request: ${filename}`);
+  // Métriques: incrémenter les requêtes concurrentes
+  metrics.cctvConcurrentRequests.inc();
+  const requestStart = Date.now();
+  
+  // Log structuré: requête vidéo reçue
+  const logger = req.log || console;
+  logger.info({ filename, requestId: req.id }, 'Video request received');
   
   // Try serving from cache first - let sendFile handle existence check and Content-Type
   return res.sendFile(cachePath, (err) => {
+    // Cleanup: décrémenter les requêtes concurrentes à la fin
+    metrics.cctvConcurrentRequests.dec();
+    
     if (!err) {
-      console.log(`✅ Served cached video: ${filename}`);
+      // Cache HIT - métriques & logs
+      metrics.cctvCacheHits.inc();
+      metrics.videoRequestDuration.labels('hit').observe((Date.now() - requestStart) / 1000);
+      logger.info({ filename, duration: Date.now() - requestStart }, 'Cache hit - video served successfully');
       return; // File served successfully
     }
     
     if (err.code && err.code !== 'ENOENT') {
-      console.error('sendFile error:', err);
+      logger.error({ filename, error: err.message, code: err.code }, 'SendFile error');
       return ApiResponse.internalError(res, 'File send error');
     }
     
-    // Cache miss ➜ lancer le download et capturer l'échec éventuel
-    console.log(`📹 Cache miss for ${filename}, starting download...`);
+    // Cache MISS - métriques & logs
+    metrics.cctvCacheMisses.inc();
+    logger.info({ filename }, 'Cache miss - starting download');
+    
+    // Re-incrémenter car handleVideoDownload va gérer sa propre durée
+    metrics.cctvConcurrentRequests.inc();
+    
     handleVideoDownload(req, res, filename, cachePath).catch(e => {
+      metrics.cctvConcurrentRequests.dec();
+      logger.error({ filename, error: e.message }, 'Download failed');
       if (!res.headersSent) ApiResponse.internalError(res, e);
     });
   });
@@ -87,22 +109,39 @@ async function handleVideoRequest(req, res) {
 
 // Separated download logic to avoid nested function complexity
 async function handleVideoDownload(req, res, filename, cachePath) {
+  const logger = req.log || console;
+  const requestStart = Date.now();
+  
   // (3) Si un téléchargement identique est déjà en cours, attendre la même promesse
   const existing = downloadPromises.get(filename);
   if (existing) {
+    logger.info({ filename }, 'Waiting for existing download to complete');
     try {
       await existing.promise;
+      metrics.videoRequestDuration.labels('miss').observe((Date.now() - requestStart) / 1000);
+      logger.info({ filename }, 'Existing download completed, serving from cache');
       return res.sendFile(cachePath, err => {
-        if (err) return ApiResponse.notFound(res, 'Video');
+        if (err) {
+          logger.error({ filename, error: err.message }, 'Error serving file after wait');
+          return ApiResponse.notFound(res, 'Video');
+        }
       });
     } catch (e) {
-      if (e?.code === 'VIDEO_NOT_FOUND') return ApiResponse.notFound(res, 'Video not found on CCTV server');
-      if (e?.code === 'INVALID_CAMERA') return ApiResponse.notFound(res, 'Camera');
+      if (e?.code === 'VIDEO_NOT_FOUND') {
+        logger.warn({ filename, errorCode: e.code }, 'Video not found on CCTV server');
+        return ApiResponse.notFound(res, 'Video not found on CCTV server');
+      }
+      if (e?.code === 'INVALID_CAMERA') {
+        logger.warn({ filename, errorCode: e.code }, 'Invalid camera ID');
+        return ApiResponse.notFound(res, 'Camera');
+      }
       if (e?.name !== 'AbortError') {
+        logger.error({ filename, error: e.message }, 'Video download failed while waiting');
         return ApiResponse.serviceUnavailable(res, 'Video download failed');
       }
       // e.name === 'AbortError' ➜ le 1er client est parti : on NE renvoie pas ici,
       // on retombe dans le flux normal pour lancer un nouveau téléchargement.
+      logger.info({ filename }, 'Previous download aborted, retrying');
     }
   }
   
@@ -121,10 +160,15 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     const cameraId = parseInt(match[1]);
     const timestamp = parseInt(match[2]);
     
-    console.log(`🚀 Starting download for ${filename}`);
+    // Log structuré: début de téléchargement
+    logger.info({ 
+      filename, 
+      cameraId, 
+      timestamp,
+      requestId: req.id 
+    }, 'Starting CCTV video download');
     
     // Get authentication token and stream video directly
-    console.log(`📡 Downloading video from CCTV server: ${filename}`);
     const token = await authenticate();
     
     // Try to get metadata first, but don't fail if it doesn't exist
@@ -133,7 +177,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     if (metadata) {
       // Use metadata if available
-      console.log(`✅ Using cached metadata for ${filename}`);
+      logger.info({ filename, metadataPath: metadata.path }, 'Using cached metadata for video');
       url = `${CCTV.baseUrl}/cgi-bin/filemanager/utilRequest.cgi`;
       params = new URLSearchParams({
         func: 'get_viewer',
@@ -143,10 +187,11 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       });
     } else {
       // Fallback: find the video on CCTV server by searching through time folders
-      console.log(`⚠️  No metadata for video: ${filename}, searching CCTV server`);
+      logger.warn({ filename, cameraId }, 'No cached metadata, searching CCTV server');
       
       if (!(cameraId in CCTV.cameras)) {
-        console.error(`❌ Invalid camera ID: ${cameraId}`);
+        logger.error({ filename, cameraId, availableCameras: Object.keys(CCTV.cameras) }, 'Invalid camera ID');
+        metrics.cctvDownloadErrors.labels('INVALID_CAMERA').inc();
         const errCam = Object.assign(new Error('Invalid camera ID'), { code: 'INVALID_CAMERA' });
         rejectDl(errCam);
         downloadPromises.delete(filename);
@@ -174,7 +219,7 @@ async function handleVideoDownload(req, res, filename, cachePath) {
         // Try normal folder first, then D folder
         for (const folderSuffix of ['', 'D']) {
           const datePath = `${searchDateStr}/${searchHour}${folderSuffix}`;
-          console.log(`🔍 Searching in ${datePath}`);
+          logger.debug({ filename, datePath, hourOffset }, 'Searching in CCTV path');
           
           const result = await listVideosInPath(cameraPath, datePath, token, cameraId);
           
@@ -182,7 +227,12 @@ async function handleVideoDownload(req, res, filename, cachePath) {
             // Look for the exact video by timestamp
             foundVideo = result.videos.find(v => Math.abs(v.timestamp - timestamp) < 60); // Within 1 minute
             if (foundVideo) {
-              console.log(`✅ Found video: ${foundVideo.filename} in ${datePath}`);
+              logger.info({ 
+                filename, 
+                foundFilename: foundVideo.filename, 
+                datePath, 
+                timestampDiff: Math.abs(foundVideo.timestamp - timestamp) 
+              }, 'Found video on CCTV server');
               break;
             }
           }
@@ -192,7 +242,8 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       }
       
       if (!foundVideo) {
-        console.error(`❌ Video not found on CCTV server: ${filename}`);
+        logger.warn({ filename, cameraId, timestamp, searchedHours: 3 }, 'Video not found on CCTV server after search');
+        metrics.cctvDownloadErrors.labels('VIDEO_NOT_FOUND').inc();
         const errNF = Object.assign(new Error('Video not found on CCTV server'), { code: 'VIDEO_NOT_FOUND' });
         rejectDl(errNF);
         downloadPromises.delete(filename);
@@ -217,9 +268,26 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     onClose = () => ac.abort();
     req.on('close', onClose);
     
-    const response = await fetchFn(`${url}?${params}`, { signal: ac.signal });
+    // Propager x-request-id vers serveur CCTV si possible
+    const headers = {};
+    if (req.id) {
+      headers['X-Request-ID'] = req.id;
+      headers['X-Source'] = 'rfid-inventory';
+    }
+    
+    const response = await fetchFn(`${url}?${params}`, { 
+      signal: ac.signal,
+      headers 
+    });
+    
     if (!response.ok) {
-      console.error(`❌ Failed to stream video: ${response.status} ${response.statusText}`);
+      logger.error({ 
+        filename, 
+        status: response.status, 
+        statusText: response.statusText,
+        url 
+      }, 'Failed to fetch video from CCTV server');
+      metrics.cctvDownloadErrors.labels('UPSTREAM_ERROR').inc();
       const err = new Error(`Failed to stream video: ${response.status}`);
       err.code = 'UPSTREAM_ERROR';
       rejectDl(err);
@@ -227,8 +295,12 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       return ApiResponse.serviceUnavailable(res, 'Video streaming service', `HTTP ${response.status}`);
     }
     
+    // *** MÉTRIQUES CRITIQUES: début de téléchargement ***
+    metrics.cctvDownloadsInProgress.inc();
+    const downloadTimer = metrics.cctvDownloadDuration.startTimer();
+    
     // (7) Écriture atomique + pipeline
-    console.log(`📡 Downloading video using pipeline: ${filename}`);
+    logger.info({ filename, contentLength: response.headers.get('content-length') }, 'Starting video pipeline download');
     const fsp = require('fs/promises');
     const { Readable } = require('node:stream');
     const tmp = cachePath + '.part';
@@ -237,21 +309,41 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     const nodeStream = (typeof response.body?.getReader === 'function')
       ? Readable.fromWeb(response.body) // Web Stream (fetch natif / node-fetch v3)
       : response.body;                   // Node stream (node-fetch v2)
+    // Créer le dossier parent si nécessaire
+    await fsp.mkdir(path.dirname(cachePath), { recursive: true });
+    
     await pipeline(nodeStream, fs.createWriteStream(tmp));
     await fsp.rename(tmp, cachePath);
     
-    console.log(`💾 Video download completed: ${filename}`);
+    // *** MÉTRIQUES CRITIQUES: fin de téléchargement ***
+    downloadTimer(); // Arrêter le timer
+    
+    const duration = Date.now() - requestStart;
+    logger.info({ 
+      filename, 
+      duration, 
+      cacheSize: (await fsp.stat(cachePath)).size,
+      requestId: req.id 
+    }, 'Video download completed successfully');
+    
+    metrics.videoRequestDuration.labels('miss').observe(duration / 1000);
     
     resolveDl();
     downloadPromises.delete(filename);
     return res.sendFile(cachePath);
     
   } catch (error) {
-    console.error(`💥 Error handling video request:`, error);
+    logger.error({ 
+      filename, 
+      error: error.message, 
+      stack: error.stack,
+      aborted: ac?.signal?.aborted 
+    }, 'Error during video download');
     
     // Si le client est parti (abort), pas besoin de répondre
     if (ac?.signal?.aborted) {
-      console.log(`🚫 Client aborted request for ${filename}, cleaning up...`);
+      logger.info({ filename }, 'Client aborted request, cleaning up');
+      metrics.cctvDownloadErrors.labels('ABORT').inc();
       rejectDl(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
       downloadPromises.delete(filename);
       // Clean up .part file if it exists
@@ -260,6 +352,8 @@ async function handleVideoDownload(req, res, filename, cachePath) {
       return; // client parti, inutile de répondre
     }
     
+    // Erreur générique
+    metrics.cctvDownloadErrors.labels('UNKNOWN').inc();
     rejectDl(error);
     downloadPromises.delete(filename);
     
@@ -269,6 +363,11 @@ async function handleVideoDownload(req, res, filename, cachePath) {
     
     return ApiResponse.internalError(res, error);
   } finally {
+    // *** MÉTRIQUES: toujours décrémenter downloads in progress ***
+    metrics.cctvDownloadsInProgress.dec();
+    // Décrémenter aussi les requêtes concurrentes
+    metrics.cctvConcurrentRequests.dec();
+    
     // Nettoyage systématique du listener
     req.off?.('close', onClose);
     // Always release semaphore
