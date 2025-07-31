@@ -53,7 +53,7 @@ class DownloadSemaphore {
   }
 }
 
-const downloadSemaphore = new DownloadSemaphore(25);
+const downloadSemaphore = new DownloadSemaphore(50);
 
 // Note: Using res.sendFile for cached videos - Express handles ranges automatically
 
@@ -233,8 +233,8 @@ async function handleVideoDownload(req, res, filename, cachePath) {
           const result = await listVideosInPath(cameraPath, datePath, token, cameraId);
           
           if (result.videos.length > 0) {
-            // Look for the exact video by timestamp
-            foundVideo = result.videos.find(v => Math.abs(v.timestamp - timestamp) < 60); // Within 1 minute
+            // Look for the exact video by timestamp (more tolerant matching)
+            foundVideo = result.videos.find(v => Math.abs(v.timestamp - timestamp) < 300); // Within 5 minutes
             if (foundVideo) {
               logger.info({ 
                 filename, 

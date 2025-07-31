@@ -386,15 +386,106 @@ table.data-table-header thead {
 .status-dot-accent { background-color: var(--color-accent); }
 .status-dot-gray { background-color: var(--color-text-disabled); }
 
-/* Time-based coloring */
-.time-fresh { --row-bg: #e6f9f0; } .time-recent { --row-bg: #e9f5ff; }
-.time-5min { --row-bg: #fffbeb; } .time-15min { --row-bg: #fff8e1; }
-.time-30min { --row-bg: #fff3e0; } .time-1hour { --row-bg: #fbe9e7; }
-.time-2hour { --row-bg: #ffebf0; } .time-6hour { --row-bg: #ffdde2; }
-.time-12hour { --row-bg: #ffced5; } .time-24hour { --row-bg: #ffc0c9; }
-.time-48hour { --row-bg: #ffb3bc; }
-.data-table-body-row[class*="time-"] { background-color: var(--row-bg); }
-.data-table-body-row[class*="time-"]:hover { background-color: color-mix(in srgb, var(--row-bg) 80%, white); }
+/* Temporal color coding badges - cohérent vert → jaune → orange → rouge */
+.time-fresh .time-elapsed { 
+  background-color: #d4edda; 
+  color: #155724;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-recent .time-elapsed { 
+  background-color: #c3e6cb; 
+  color: #155724;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-5min .time-elapsed { 
+  background-color: #e2f3ca; 
+  color: #5a6c14;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-15min .time-elapsed { 
+  background-color: #fff3cd; 
+  color: #856404;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-30min .time-elapsed { 
+  background-color: #ffeaa7; 
+  color: #856404;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-1hour .time-elapsed { 
+  background-color: #fdcb6e; 
+  color: #8b5a00;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-2hour .time-elapsed { 
+  background-color: #fab1a0; 
+  color: #8b4000;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-6hour .time-elapsed { 
+  background-color: #e17055; 
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-12hour .time-elapsed { 
+  background-color: #d63031; 
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-24hour .time-elapsed { 
+  background-color: #b71c1c; 
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.time-48hour .time-elapsed { 
+  background-color: #8b0000; 
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .time-elapsed { font-family: var(--font-family-mono); font-size: 0.85rem; }
 
 /* ===== UTILITY CLASSES ===== */
