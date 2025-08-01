@@ -189,4 +189,37 @@ router.post('/input2', async (req, res) => {
   res.status(200).json({ ok: true, processed, failed });
 });
 
+/**
+ * Route: POST /api/rfid/write
+ * Reçoit une demande de gravure RFID (UHF Gen2)
+ */
+router.post('/rfid/write', async (req, res) => {
+  const { epc, mac_address, serial } = req.body || {};
+  
+  if (!epc || !mac_address || !serial) {
+    return res.status(400).json({ error: 'Missing epc, serial or mac_address' });
+  }
+
+  // Log + future extension vers graveur UART
+  logger.info('Received RFID write request', { epc, serial, mac_address });
+
+  try {
+    // Créer l'item dans la base avec valeurs par défaut pour affichage
+    await pool.execute(`
+      INSERT INTO item (epc, mac_address, serial_number, group_id, designation, brand, model, category, updated_at, epc_timestamp, antenna, reader_name, show_in_main)
+      VALUES (?, ?, ?, 5, 'Item gravé RFID', 'RFID Writer', 'UHF Gen2', 'RFID_WRITTEN', NOW(), NOW(), '0', 'RFID Writer WiFi', 1)
+      ON DUPLICATE KEY UPDATE 
+        mac_address=VALUES(mac_address), 
+        serial_number=VALUES(serial_number),
+        updated_at=VALUES(updated_at),
+        epc_timestamp=VALUES(epc_timestamp)
+    `, [epc, mac_address, serial]);
+
+    res.status(200).json({ success: true, message: 'RFID item written and registered', epc, serial });
+  } catch (error) {
+    logger.error('Error in /rfid/write', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

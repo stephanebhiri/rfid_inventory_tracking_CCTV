@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles/material-design.css';
+import './styles/modal.css';
 
 
 

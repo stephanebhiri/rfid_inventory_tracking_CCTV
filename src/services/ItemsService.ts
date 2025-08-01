@@ -60,6 +60,28 @@ export class ItemsService {
     }
   }
 
+  async createItem(item: Partial<Item>): Promise<Item> {
+    try {
+      const response = await fetch('/api/items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(item),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const apiResponse: ApiResponse<Item> = await response.json();
+      
+      return apiResponse.success !== undefined ? apiResponse.data : apiResponse as unknown as Item;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   /**
    * Enhanced version with retry logic and better error handling
    */
