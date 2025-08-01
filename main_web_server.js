@@ -18,6 +18,14 @@ const realtimeService = require('./server/services/realtimeService');
 const itemsRoutes = require('./server/routes/items');
 const timelineRoutes = require('./server/routes/timeline');
 const cctvRoutes = require('./server/routes/cctv');
+let groupsRoutes;
+try {
+  groupsRoutes = require('./server/routes/groups');
+  console.log('✅ Groups routes loaded successfully');
+} catch (error) {
+  console.error('❌ Failed to load groups routes:', error.message);
+  groupsRoutes = express.Router();
+}
 const pool = require('./server/config/database');
 const { handleVideoRequest } = require('./server/middleware/videoStreaming');
 const { setupSecurity } = require('./server/config/security');
@@ -196,11 +204,20 @@ wss.on('error', (err) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Debug middleware
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/groups')) {
+    console.log('🔍 Request to groups:', req.method, req.path);
+  }
+  next();
+});
+
 // API Routes needed by the frontend
 app.use('/api/items', itemsRoutes);
 app.use('/api/cctv', cctvRoutes);
 app.use('/api', timelineRoutes);
 app.use('/api', inputRoutes);
+app.use('/api/groups', groupsRoutes);
 
 // Monitoring and health check routes
 app.use('/api/monitoring', monitoringRoutes);

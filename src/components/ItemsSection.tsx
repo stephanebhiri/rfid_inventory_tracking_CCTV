@@ -3,7 +3,9 @@ import { useItems } from '../hooks/useItems';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { useRealtime } from '../hooks/useRealtime';
 import ItemsTable from './ItemsTable';
+import AddItemModal from './AddItemModal';
 import { automationAPI } from '../api/AutomationAPI';
+import { ItemsService, Item } from '../services/ItemsService';
 
 interface ItemsSectionProps {
   onItemClick: (timestamp: number, designation: string, groupId: number) => void;
@@ -14,7 +16,9 @@ const ItemsSection: React.FC<ItemsSectionProps> = ({ onItemClick, onHealthCheck 
   const { items, loading, error, refetch } = useItems();
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [realtimeEnabled, setRealtimeEnabled] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
   const refetchRef = useRef(refetch);
+  const itemsService = new ItemsService();
   
   // Keep refetch ref up to date
   useEffect(() => {
@@ -36,6 +40,15 @@ const ItemsSection: React.FC<ItemsSectionProps> = ({ onItemClick, onHealthCheck 
   const toggleRealtime = useCallback(() => {
     setRealtimeEnabled(prev => !prev);
   }, []);
+
+  const handleAddItem = useCallback(async (item: Partial<Item>) => {
+    try {
+      await itemsService.createItem(item);
+      refetchRef.current();
+    } catch (error) {
+      throw error;
+    }
+  }, [itemsService]);
 
   // SIMPLE POLLING comme Angular - 1 seconde
   useAutoRefresh(silentRefresh, 5000, autoRefreshEnabled); // 5 seconds instead of 1
@@ -93,6 +106,15 @@ const ItemsSection: React.FC<ItemsSectionProps> = ({ onItemClick, onHealthCheck 
             </div>
           </div>
           <div className="flex-items-gap-3">
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="btn btn-primary"
+            >
+              <svg className="icon-small" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Ajouter Item</span>
+            </button>
             {/* Realtime button disabled for debugging */}
             <button 
               onClick={toggleAutoRefresh}
@@ -150,6 +172,13 @@ const ItemsSection: React.FC<ItemsSectionProps> = ({ onItemClick, onHealthCheck 
 
       {/* Items Table */}
       <ItemsTable items={items} onItemClick={onItemClick} />
+
+      {/* Add Item Modal */}
+      <AddItemModal 
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSubmit={handleAddItem}
+      />
 
       {/* Info Bar */}
       <div className="info-bar">

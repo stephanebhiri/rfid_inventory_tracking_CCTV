@@ -108,4 +108,73 @@ router.get('/:id',
   }
 });
 
+// Create new item
+router.post('/', async (req, res) => {
+  try {
+    const {
+      designation,
+      brand = '',
+      model = '',
+      serial_number = '',
+      epc = '',
+      inventory_code = '',
+      category = '',
+      group_id = 1
+    } = req.body;
+
+    if (!designation || designation.trim() === '') {
+      return ApiResponse.badRequest(res, 'Designation is required');
+    }
+
+    const query = `
+      INSERT INTO item (
+        designation, brand, model, serial_number, epc, 
+        inventory_code, category, group_id, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `;
+
+    const [result] = await pool.execute(query, [
+      designation.trim(),
+      brand.trim(),
+      model.trim(),
+      serial_number.trim(),
+      epc.trim(),
+      inventory_code.trim(),
+      category.trim(),
+      parseInt(group_id)
+    ]);
+
+    const itemId = result.insertId;
+    
+    // Fetch the created item
+    const selectQuery = `
+      SELECT i.*, g.group_name as \`group\`, UNIX_TIMESTAMP(i.updated_at) as updated_atposix
+      FROM item i 
+      LEFT JOIN groupname g ON i.group_id = g.group_id
+      WHERE i.id = ?
+    `;
+    
+    const [createdItem] = await pool.execute(selectQuery, [itemId]);
+
+    logger.info('Item created successfully', {
+      correlationId: req.correlationId,
+      itemId,
+      designation
+    });
+
+    return ApiResponse.success(res, createdItem[0], {
+      itemId,
+      endpoint: 'items'
+    });
+
+  } catch (error) {
+    logger.error('Failed to create item', {
+      correlationId: req.correlationId,
+      error: error.message,
+      stack: error.stack
+    });
+    return ApiResponse.databaseError(res, error);
+  }
+});
+
 module.exports = router;
