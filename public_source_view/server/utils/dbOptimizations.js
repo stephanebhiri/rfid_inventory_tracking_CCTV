@@ -22,7 +22,6 @@ const optimizedQueries = {
     return {
       sql: `
         SELECT 
-          i.id,
           i.mac_address, 
           i.brand, 
           i.model, 
@@ -71,7 +70,6 @@ const optimizedQueries = {
     return {
       sql: `
         SELECT 
-          i.id,
           i.mac_address, 
           i.brand, 
           i.model, 
@@ -105,7 +103,6 @@ const optimizedQueries = {
     return {
       sql: `
         SELECT 
-          i.id,
           i.mac_address, 
           i.brand, 
           i.model, 

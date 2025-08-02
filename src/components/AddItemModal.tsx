@@ -14,7 +14,7 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onSubmit }
     brand: '',
     model: '',
     serial_number: '',
-    epc: '',
+    epc: '', // Laissé vide, le backend génère automatiquement
     inventory_code: '',
     category: '',
     group_id: 1
@@ -45,15 +45,18 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onSubmit }
         brand: '',
         model: '',
         serial_number: '',
-        epc: '',
+        epc: '', // Backend génère automatiquement
         inventory_code: '',
         category: '',
         group_id: 1
       });
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de l\'ajout:', error);
-      alert('Erreur lors de l\'ajout de l\'item');
+      const errorMessage = error.response?.data?.error?.message || 
+                          error.message || 
+                          'Erreur lors de l\'ajout de l\'item';
+      alert(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -117,13 +120,14 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onSubmit }
             </div>
 
             <div className="form-group">
-              <label htmlFor="epc">EPC</label>
+              <label htmlFor="epc">EPC (optionnel - généré automatiquement si vide)</label>
               <input
                 type="text"
                 id="epc"
                 name="epc"
                 value={formData.epc}
                 onChange={handleInputChange}
+                placeholder="Laissez vide pour génération automatique"
               />
             </div>
 

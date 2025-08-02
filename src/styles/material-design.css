@@ -102,6 +102,11 @@ table.data-table-header thead {
   background-color: var(--color-surface-alt);
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
+
+/* When bulk actions are visible, adjust thead position */
+.has-bulk-actions table.data-table-header thead {
+  top: 60px;
+}
 .data-table th {
   padding: var(--space-4);
   font-size: 0.8rem;
@@ -122,7 +127,15 @@ table.data-table-header thead {
   transition: var(--transition-fast);
 }
 .data-table-body-row:last-child td { border-bottom: none; }
-.data-table-body-row:hover, .item-clickable:hover { background-color: var(--color-primary-light); }
+/* Subtle hover effect in selection mode */
+.selection-mode .item-clickable:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Hover effect only in normal mode (non-selection tables) */
+.data-table:not(.selection-mode) .item-clickable:hover { 
+  background-color: var(--color-primary-light); 
+}
 .data-table-body-row:hover td { color: var(--color-text-primary); }
 .sortable::after { content: ' \2195'; opacity: 0.4; }
 .sort-asc::after { content: ' \2191'; opacity: 1; color: var(--color-primary); }
@@ -507,7 +520,10 @@ table.data-table-header thead {
 .fw-med { font-weight: 500; }
 .bg-success { background-color: var(--color-success); color: var(--color-white); }
 .bg-error { background-color: var(--color-error); color: var(--color-white); }
-.item-clickable { cursor: pointer; }
+.item-clickable { 
+  cursor: pointer; 
+  transition: background-color 0.15s ease;
+}
 .text-caption-1 { font-size: 0.8rem; color: var(--color-text-secondary); }
 .text-body-1-strong { font-weight: 600; }
 .text-title-3 { font-size: 1.5rem; }
@@ -547,3 +563,589 @@ table.data-table-header thead {
 .d3-timeline-svg .zoom-indicator { font-size: 11px; font-weight: 500; fill: #4a5568; }
 .d3-timeline-svg .x-axis-major text, .d3-timeline-svg .x-axis-minor text { font-size: 10px; }
 .d3-timeline-svg .x-axis-major path, .d3-timeline-svg .x-axis-minor path, .d3-timeline-svg .x-axis-major line, .d3-timeline-svg .x-axis-minor line { stroke: var(--color-border); }
+
+/* Bulk Selection Styles */
+.bulk-actions-bar {
+  background: rgba(74, 144, 226, 0.95);
+  backdrop-filter: blur(12px);
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0;
+  border-radius: 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  animation: fadeIn 0.3s ease;
+}
+
+.bulk-actions-visible {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  margin-bottom: 16px;
+}
+
+.bulk-actions-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bulk-count {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.bulk-actions-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.bulk-action-dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  min-width: 220px;
+  margin-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  backdrop-filter: blur(8px);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  border-radius: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  transition: var(--transition-fast);
+  gap: 8px;
+}
+
+.dropdown-item:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.dropdown-item:active {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* Groups dropdown styling */
+.dropdown-menu-groups {
+  min-width: 250px;
+}
+
+.dropdown-group-item {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dropdown-group-item:last-child {
+  border-bottom: none;
+}
+
+.group-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.group-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.dropdown-empty {
+  color: var(--color-text-secondary);
+  font-style: italic;
+  justify-content: center;
+}
+
+.dropdown-item:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.dropdown-item:last-child {
+  border-radius: 0 0 6px 6px;
+}
+
+.category-input-form {
+  padding: 12px;
+}
+
+.category-input-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bulk-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.selection-info {
+  background: var(--accent-color);
+  color: white;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.selection-column {
+  width: 40px;
+  text-align: center;
+}
+
+.selection-checkbox {
+  transform: scale(1.1);
+  cursor: default;
+  pointer-events: none;
+}
+
+.item-clickable.selected {
+  background-color: var(--selected-bg, #e3f2fd);
+}
+
+.item-clickable.selected:hover {
+  background-color: var(--selected-hover-bg, #bbdefb);
+}
+
+/* During drag selection, only show selection colors, not hover */
+.data-table tbody[style*="user-select: none"] .item-clickable.selected {
+  background-color: var(--selected-bg, #e3f2fd);
+}
+
+.data-table tbody[style*="user-select: none"] .item-clickable.selected:hover {
+  background-color: var(--selected-bg, #e3f2fd);
+}
+
+/* Drag selection styles */
+.item-clickable.dragging {
+  background-color: var(--color-primary-light);
+}
+
+.data-table tbody[style*="user-select: none"] {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* Disable active state completely for now */
+
+/* Keyboard shortcuts hint */
+.selection-info::after {
+  content: " • Ctrl+clic pour toggle • Shift+clic pour plage • Shift+glisser pour toggle sélection";
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 8px;
+}
+
+/* Inline editing styles */
+.inline-edit-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--color-primary);
+  border-radius: 3px;
+  background: white;
+  font-size: 13px;
+  font-family: inherit;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+.inline-edit-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.3);
+}
+
+.inline-edit-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.inline-edit-actions .btn {
+  min-width: 24px;
+  height: 24px;
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Row in edit mode styling */
+.item-clickable.editing {
+  background-color: rgba(74, 144, 226, 0.05);
+  border-left: 3px solid var(--color-primary);
+}
+
+/* Only disable text selection on selection column */
+.selection-column {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  text-align: center;
+  padding: 8px 16px;
+}
+
+/* Re-enable text selection for input fields */
+.inline-edit-input {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
+/* Disable text selection on table rows to prevent interference with click selection */
+.item-clickable td {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Only allow text selection when editing */
+.item-clickable.editing td {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Button variations */
+.btn-xs {
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-link:hover {
+  color: white;
+}
+
+/* Inventory Editor Styles */
+.filters-bar {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.filter-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.form-input, .form-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
+}
+
+.filter-stats {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.items-count {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  background: var(--accent-color);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+/* Category Dropdown Enhancements */
+.category-dropdown {
+  min-width: 320px;
+  max-width: 380px;
+}
+
+.category-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  margin: 0 0 12px 0;
+  background: var(--color-surface-alt);
+}
+
+.tab-button {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-bottom: 3px solid transparent;
+  transition: var(--transition-fast);
+}
+
+.tab-button:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.tab-button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background: var(--color-surface);
+  font-weight: 600;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.category-button {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--border-radius-md);
+  transition: var(--transition-fast);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.category-button:hover {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.category-button:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.category-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Inline Editing Styles */
+.edit-actions-column {
+  width: 80px;
+  text-align: center;
+  padding: 4px !important;
+}
+
+.inline-edit-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.btn-edit-save,
+.btn-edit-cancel,
+.btn-delete-item {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  transition: var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-edit-save {
+  background: var(--color-success);
+  color: white;
+}
+
+.btn-edit-save:hover {
+  background: var(--color-success-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-edit-cancel {
+  background: var(--color-danger);
+  color: white;
+}
+
+.btn-edit-cancel:hover {
+  background: var(--color-danger-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-delete-item {
+  background: var(--color-neutral-400);
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+
+.btn-delete-item:hover {
+  background: var(--color-danger);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.inline-edit-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--border-radius-sm);
+  font-size: 14px;
+  background: white;
+}
+
+.inline-edit-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Responsive filters */
+@media (max-width: 768px) {
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .filter-group {
+    min-width: auto;
+  }
+  
+  .filter-stats {
+    margin-left: 0;
+    justify-content: center;
+  }
+
+  .category-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .category-dropdown {
+    min-width: 240px;
+  }
+}
+
+/* Disable text selection on table rows to prevent interference with click selection */
+.item-clickable td {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Only allow text selection when editing */
+.item-clickable.editing td {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Category dropdown styles */
+.dropdown-trigger {
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  background: white;
+}
+
+.dropdown-trigger::after {
+  content: "▼";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  opacity: 0.5;
+}

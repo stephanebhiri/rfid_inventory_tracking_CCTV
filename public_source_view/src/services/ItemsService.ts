@@ -1,7 +1,6 @@
 import { errorService } from './ErrorService';
 
 export interface Item {
-  id: number;
   mac_address: string;
   brand: string;
   model: string;
@@ -57,28 +56,6 @@ export class ItemsService {
       }
     } catch (error) {
       // Error handled by caller (useItems hook)
-      throw error;
-    }
-  }
-
-  async createItem(item: Partial<Item>): Promise<Item> {
-    try {
-      const response = await fetch('/api/items', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(item),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const apiResponse: ApiResponse<Item> = await response.json();
-      
-      return apiResponse.data;
-    } catch (error) {
       throw error;
     }
   }
@@ -159,113 +136,5 @@ export class ItemsService {
     }
     
     throw new Error('Unexpected error in retry logic');
-  }
-
-  // Bulk operations
-  async bulkDelete(itemIds: number[]): Promise<{ deletedCount: number }> {
-    try {
-      const response = await fetch('/api/items/bulk', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ itemIds }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const apiResponse: ApiResponse<{ deletedCount: number }> = await response.json();
-      return apiResponse.data;
-    } catch (error) {
-      console.error('Failed to bulk delete items:', error);
-      throw error;
-    }
-  }
-
-  async bulkUpdateGroup(itemIds: number[], groupId: number): Promise<{ updatedCount: number }> {
-    try {
-      const response = await fetch('/api/items/bulk/group', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ itemIds, groupId }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const apiResponse: ApiResponse<{ updatedCount: number }> = await response.json();
-      return apiResponse.data;
-    } catch (error) {
-      console.error('Failed to bulk update group:', error);
-      throw error;
-    }
-  }
-
-  async bulkUpdateCategory(itemIds: number[], category: string): Promise<{ updatedCount: number }> {
-    try {
-      const response = await fetch('/api/items/bulk/category', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ itemIds, category }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const apiResponse: ApiResponse<{ updatedCount: number }> = await response.json();
-      return apiResponse.data;
-    } catch (error) {
-      console.error('Failed to bulk update category:', error);
-      throw error;
-    }
-  }
-
-  async updateItem(itemId: number, updates: Partial<Item>): Promise<Item> {
-    try {
-      const response = await fetch(`/api/items/${itemId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const apiResponse: ApiResponse<Item> = await response.json();
-      return apiResponse.data;
-    } catch (error) {
-      console.error('Failed to update item:', error);
-      throw error;
-    }
-  }
-
-  async deleteItem(itemId: number): Promise<void> {
-    try {
-      const response = await fetch(`/api/items/bulk`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ itemIds: [itemId] }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Failed to delete item:', error);
-      throw error;
-    }
   }
 }

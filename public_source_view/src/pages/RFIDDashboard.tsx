@@ -4,7 +4,6 @@ import CCTVModal from '../components/cctv/CCTVModal';
 import ItemsSection from '../components/ItemsSection';
 import HistoryPage from '../components/HistoryPage';
 import TimelinePage from '../components/TimelinePage';
-import InventoryEditor from './InventoryEditor';
 import { automationAPI } from '../api/AutomationAPI';
 
 const RFIDDashboard: React.FC = () => {
@@ -13,7 +12,7 @@ const RFIDDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [cctvModalVisible, setCctvModalVisible] = useState(false);
   const [currentItemName, setCurrentItemName] = useState<string>('');
-  const [currentView, setCurrentView] = useState<'inventory' | 'history' | 'timeline' | 'editor'>('inventory');
+  const [currentView, setCurrentView] = useState<'inventory' | 'history' | 'timeline'>('inventory');
 
   const handleHealthCheck = useCallback(async () => {
     const cctvService = new CCTVService();
@@ -114,12 +113,6 @@ const RFIDDashboard: React.FC = () => {
           >
             📅 Timeline
           </button>
-          <button 
-            onClick={() => setCurrentView('editor')}
-            className={`nav-button ${currentView === 'editor' ? 'active' : ''}`}
-          >
-            ⚙️ Gestion Inventaire
-          </button>
         </nav>
       </header>
 
@@ -142,8 +135,6 @@ const RFIDDashboard: React.FC = () => {
           <HistoryPage />
         ) : currentView === 'timeline' ? (
           <TimelinePage />
-        ) : currentView === 'editor' ? (
-          <InventoryEditor />
         ) : (
           /* Main RFID Inventory View */
           <ItemsSection 

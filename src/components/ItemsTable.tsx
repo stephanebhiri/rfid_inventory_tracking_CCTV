@@ -2,16 +2,44 @@ import React, { useMemo, useCallback } from 'react';
 import { Item } from '../services/ItemsService';
 import { useSorting, SortColumn } from '../hooks/useSorting';
 import { useScrollPreservation } from '../hooks/useScrollPreservation';
+import { useSelection } from '../hooks/useSelection';
 import ItemRow from './ItemRow';
 
 interface ItemsTableProps {
   items: Item[];
   onItemClick: (timestamp: number, designation: string, groupId: number) => void;
+  selectionMode?: boolean;
+  onSelectionChange?: (selectedItems: Item[]) => void;
+  editingItem?: number | null;
+  onStartEdit?: (itemId: number) => void;
+  onSaveEdit?: (itemId: number, updates: Partial<Item>) => void;
+  onCancelEdit?: () => void;
+  onDeleteItem?: (itemId: number) => void;
+  categoryOptions?: string[];
 }
 
-const ItemsTable: React.FC<ItemsTableProps> = React.memo(({ items, onItemClick }) => {
+const ItemsTable: React.FC<ItemsTableProps> = React.memo(({ 
+  items, 
+  onItemClick, 
+  selectionMode = false, 
+  onSelectionChange,
+  editingItem,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDeleteItem,
+  categoryOptions
+}) => {
   const { sortedItems, sortColumn, sortDirection, handleSort } = useSorting(items);
   const scrollRef = useScrollPreservation(sortedItems);
+  const selection = useSelection(sortedItems);
+
+  // Notify parent of selection changes
+  React.useEffect(() => {
+    if (onSelectionChange) {
+      onSelectionChange(selection.selectedItems);
+    }
+  }, [selection.selectedItems, onSelectionChange]);
 
   // Memoized empty state
   const emptyState = useMemo(() => 
@@ -43,10 +71,32 @@ const ItemsTable: React.FC<ItemsTableProps> = React.memo(({ items, onItemClick }
   }
 
   return (
-    <div className="data-table" ref={scrollRef}>
+    <div className={`data-table ${selectionMode ? 'selection-mode' : ''}`} ref={scrollRef}>
+      {selectionMode && selection.selectionCount > 0 && (
+        <div className="selection-info">
+          <span>{selection.selectionCount} item(s) sélectionné(s)</span>
+          <button onClick={selection.clearSelection} className="btn-link">
+            Désélectionner tout
+          </button>
+        </div>
+      )}
       <table className="data-table-header">
         <thead>
           <tr>
+            {selectionMode && (
+              <th className="selection-column">
+                <input
+                  type="checkbox"
+                  checked={selection.isAllSelected}
+                  ref={(input) => {
+                    if (input) input.indeterminate = selection.isPartiallySelected;
+                  }}
+                  onChange={selection.toggleAll}
+                  title={selection.isAllSelected ? 'Désélectionner tout' : 'Sélectionner tout'}
+                />
+              </th>
+            )}
+            {selectionMode && <th className="edit-actions-column">Actions</th>}
             {columnHeaders.map(({ key, label }) => (
               <th 
                 key={key}
@@ -58,12 +108,30 @@ const ItemsTable: React.FC<ItemsTableProps> = React.memo(({ items, onItemClick }
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody
+          onMouseUp={selection.handleDragEnd}
+          onMouseLeave={selection.handleDragEnd}
+          style={{ userSelect: selection.isDragging ? 'none' : 'auto' }}
+        >
           {sortedItems.map((item, index) => (
             <ItemRow 
               key={`${item.epc}-${index}`} 
               item={item} 
+              index={index}
               onClick={onItemClick}
+              selectionMode={selectionMode}
+              isSelected={selection.isItemSelected(item.id)}
+              onToggleSelect={selection.toggleItem}
+              onItemClick={selection.handleRowClick}
+              onMouseDown={selection.handleDragStart}
+              onMouseEnter={selection.handleDragEnter}
+              isDragging={selection.isDragging}
+              editingItem={editingItem}
+              onStartEdit={onStartEdit}
+              onSaveEdit={onSaveEdit}
+              onCancelEdit={onCancelEdit}
+              onDeleteItem={onDeleteItem}
+              categoryOptions={categoryOptions}
             />
           ))}
         </tbody>
