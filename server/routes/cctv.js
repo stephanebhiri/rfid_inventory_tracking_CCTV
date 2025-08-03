@@ -12,7 +12,7 @@ const cctvLimiter = rateLimit({ windowMs: 60_000, max: 30, message: 'Too many re
 
 // Main API endpoint to get videos - returns closest video immediately
 router.get('/videos', 
-  cctvLimiter,
+  // cctvLimiter, // Temporarily disabled for debugging
   validators.cctvVideoRequest, 
   handleValidationErrors,
   async (req, res) => {
@@ -52,7 +52,7 @@ router.get('/videos',
       videoCount: result.videos.length
     });
     
-    return ApiResponse.success(res, response);
+    return res.json(response);
     
   } catch (error) {
     logger.error('CCTV request failed', {
