@@ -1,22 +1,29 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const { getVideosForCamera, buildVideoResponse } = require('../utils/videoTools');
 const { clearCache } = require('../utils/fileTools');
 const { validators, handleValidationErrors } = require('../middleware/validation');
 const ApiResponse = require('../utils/responseFormatter');
 const { logger, loggers } = require('../logger');
 
+// rate-limit for CCTV endpoints to protect backend
+const cctvLimiter = rateLimit({ windowMs: 60_000, max: 30, message: 'Too many requests, please slow down.' });
+
 // Main API endpoint to get videos - returns closest video immediately
 router.get('/videos', 
+  cctvLimiter,
   validators.cctvVideoRequest, 
   handleValidationErrors,
   async (req, res) => {
   try {
-    const { target, camera } = req.query;
-    
-    // Validation already handled by middleware
-    const targetTimestamp = parseInt(target);
-    const cameraId = parseInt(camera);
+    const targetTimestamp = parseInt(req.query.target, 10);
+    const cameraId = parseInt(req.query.camera, 10);
+
+    if (isNaN(targetTimestamp) || isNaN(cameraId)) {
+      logger.warn('Invalid CCTV params', { target: req.query.target, camera: req.query.camera });
+      return ApiResponse.badRequest(res, 'Invalid target or camera id');
+    }
     
     logger.info('CCTV video request', { cameraId, targetTimestamp, correlationId: req.correlationId });
     
@@ -42,11 +49,10 @@ router.get('/videos',
     logger.info('CCTV response sent', {
       correlationId: req.correlationId,
       camera: cameraId,
-      videoCount: result.videos.length,
-      cameraAvailable: result.cameraAvailable
+      videoCount: result.videos.length
     });
     
-    res.json(response);
+    return ApiResponse.success(res, response);
     
   } catch (error) {
     logger.error('CCTV request failed', {
@@ -60,9 +66,13 @@ router.get('/videos',
   }
 });
 
+// Test endpoints for development only
+if (process.env.NODE_ENV !== 'production') {
+
 // Test endpoint for slow response simulation
 router.get('/videos-slow', async (req, res) => {
-  const delay = parseInt(req.query.delay) || 6000;
+  let delay = parseInt(req.query.delay, 10) || 6000;
+  delay = Math.min(Math.max(delay, 0), 30_000);
   logger.debug(`Test endpoint called with ${delay}ms delay`);
   
   setTimeout(async () => {
@@ -71,12 +81,11 @@ router.get('/videos-slow', async (req, res) => {
       const response = [
         {"0":"/static/cache/videos/cam1_1752595200_slow_test.mp4"},
         0,
-        -4800,
-        1,
+        -4800, 1,
         {"0":1752595200}
       ];
       logger.debug(`Test response completed after ${delay}ms`);
-      res.json(response);
+      return ApiResponse.success(res, response);
     } catch (error) {
       return ApiResponse.internalError(res, error);
     }
@@ -86,63 +95,61 @@ router.get('/videos-slow', async (req, res) => {
 // Test endpoint for 404 video simulation
 router.get('/videos-404', async (req, res) => {
   logger.debug('Test 404 endpoint called');
-  
   try {
-    // Return response with URLs that will 404
     const response = [
       {
         "0":"/static/cache/videos/non_existent_video_1.mp4",
         "1":"/static/cache/videos/non_existent_video_2.mp4"
       },
-      0,
-      0,
-      1,
-      {
-        "0":1752595200,
-        "1":1752595260
-      }
+      0, 0, 1,
+      { "0":1752595200, "1":1752595260 }
     ];
     logger.debug('Test 404 response sent');
-    res.json(response);
+    return ApiResponse.success(res, response);
   } catch (error) {
     return ApiResponse.internalError(res, error);
   }
 });
 
+}
+
 // Cache management route
-router.delete('/cache', clearCache);
+router.delete('/cache', 
+  validators.adminToken,
+  handleValidationErrors,
+  async (req, res, next) => {
+    try {
+      await clearCache();
+      return res.sendStatus(204);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // Simple cache info endpoint
-router.get('/cache-info', (req, res) => {
+router.get('/cache-info', async (req, res) => {
+  const fs = require('fs').promises;
+  const path = require('path');
+  const cacheDir = path.resolve(__dirname, '..', '..', 'static', 'cache', 'videos');
+  let totalSize = 0, fileCount = 0;
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const cacheDir = path.join(__dirname, '..', '..', 'static', 'cache', 'videos');
-    
-    let totalSize = 0;
-    let fileCount = 0;
-    
-    if (fs.existsSync(cacheDir)) {
-      const files = fs.readdirSync(cacheDir);
-      files.forEach(file => {
-        if (file.endsWith('.mp4')) {
-          const filePath = path.join(cacheDir, file);
-          const stats = fs.statSync(filePath);
-          totalSize += stats.size;
-          fileCount++;
-        }
-      });
-    }
-    
-    return ApiResponse.success(res, {
-      files: fileCount,
-      size: `${(totalSize / 1024 / 1024).toFixed(1)} MB`,
-      sizeBytes: totalSize
-    });
-  } catch (error) {
-    logger.error('Cache info error', { error: error.message });
-    return ApiResponse.internalError(res, error);
+    const entries = await fs.readdir(cacheDir);
+    await Promise.all(entries.map(async file => {
+      if (file.endsWith('.mp4')) {
+        const stats = await fs.stat(path.join(cacheDir, file));
+        totalSize += stats.size;
+        fileCount++;
+      }
+    }));
+  } catch {
+    // directory may not exist or be empty
   }
+  return ApiResponse.success(res, {
+    files: fileCount,
+    sizeBytes: totalSize,
+    size: `${(totalSize/1024/1024).toFixed(1)} MB`
+  });
 });
 
 module.exports = router;
