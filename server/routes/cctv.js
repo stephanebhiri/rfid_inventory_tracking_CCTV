@@ -113,19 +113,21 @@ router.get('/videos-404', async (req, res) => {
 
 }
 
-// Cache management route
-router.delete('/cache', 
-  validators.adminToken,
-  handleValidationErrors,
-  async (req, res, next) => {
-    try {
-      await clearCache();
-      return res.sendStatus(204);
-    } catch (err) {
-      next(err);
+// Cache management route  
+router.delete('/cache', async (req, res, next) => {
+  try {
+    // Basic auth check - in production you'd use proper admin middleware
+    const adminToken = req.headers['x-admin-token'];
+    if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
+    
+    await clearCache();
+    return res.sendStatus(204);
+  } catch (err) {
+    next(err);
   }
-);
+});
 
 // Simple cache info endpoint
 router.get('/cache-info', async (req, res) => {
