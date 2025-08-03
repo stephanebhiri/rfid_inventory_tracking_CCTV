@@ -7,23 +7,38 @@ class RealtimeService {
     this.subscriber = null;
     this.websocketClients = new Set();
     this.isConnected = false;
+    this._initialized = false;
+    this._emitter = new (require('events')).EventEmitter();
   }
 
   async initialize() {
+    if (this._initialized) return;
+    this._initialized = true;
     try {
       // Create Redis clients
       this.publisher = redis.createClient({
-        host: 'localhost',
-        port: 6379,
-        retryDelayOnFailover: 100,
-        maxRetriesPerRequest: 3
+        socket: {
+          host: 'localhost',
+          port: 6379,
+          keepAlive: 60_000,
+        },
+        enableReadyCheck: true,
+        retryStrategy(times) {
+          return Math.min(times * 50, 2000);
+        },
+        maxRetriesPerRequest: 3,
+        retryDelayOnFailover: 100
       });
 
       this.subscriber = redis.createClient({
-        host: 'localhost', 
-        port: 6379,
+        socket: {
+          host: 'localhost',
+          port: 6379,
+          keepAlive: 60_000,
+        },
+        maxRetriesPerRequest: 3,
         retryDelayOnFailover: 100,
-        maxRetriesPerRequest: 3
+        enableReadyCheck: true
       });
 
       // Handle connection events
@@ -51,14 +66,10 @@ class RealtimeService {
       await this.subscriber.connect();
 
       // Subscribe to RFID events
-      await this.subscriber.subscribe('rfid:events', (message) => {
-        this.handleRFIDEvent(message);
-      });
+      await this.subscriber.subscribe('rfid:events', this.handleRFIDEvent.bind(this));
 
       // Subscribe to system events
-      await this.subscriber.subscribe('system:events', (message) => {
-        this.handleSystemEvent(message);
-      });
+      await this.subscriber.subscribe('system:events', this.handleSystemEvent.bind(this));
 
       logger.info('🚀 Realtime Service initialized with Redis Pub/Sub');
       
@@ -153,6 +164,9 @@ class RealtimeService {
     this.websocketClients.add(ws);
     logger.info(`➕ WebSocket client connected (total: ${this.websocketClients.size})`);
 
+    // Expose events for non-WS listeners
+    this._emitter.emit('client:connect', ws);
+
     // Send connection confirmation
     this.sendToClient(ws, 'connection', {
       status: 'connected',
@@ -177,11 +191,11 @@ class RealtimeService {
   sendToClient(ws, type, data) {
     if (ws.readyState === ws.OPEN) {
       try {
-        ws.send(JSON.stringify({
-          type,
-          timestamp: new Date().toISOString(),
-          data
-        }));
+        const payload = JSON.stringify({ type, timestamp: new Date().toISOString(), data });
+        // Backpressure: skip if client is too slow
+        if (ws.bufferedAmount < 1_000_000) {
+          ws.send(payload);
+        }
       } catch (error) {
         logger.error('Failed to send message to WebSocket client:', error);
         this.websocketClients.delete(ws);
@@ -191,18 +205,18 @@ class RealtimeService {
 
   // Broadcast to all connected clients
   broadcastToClients(type, data) {
-    const message = JSON.stringify({
+    const message = Buffer.from(JSON.stringify({
       type,
       timestamp: new Date().toISOString(),
       data
-    });
+    }));
 
     const deadClients = [];
     
     for (const ws of this.websocketClients) {
       if (ws.readyState === ws.OPEN) {
         try {
-          ws.send(message);
+          if (ws.bufferedAmount < 1_000_000) ws.send(message);
         } catch (error) {
           logger.error('Failed to broadcast to WebSocket client:', error);
           deadClients.push(ws);
@@ -214,6 +228,16 @@ class RealtimeService {
 
     // Clean up dead connections
     deadClients.forEach(ws => this.websocketClients.delete(ws));
+    this._emitter.emit('broadcast', type, data);
+  }
+
+  // For tests or internal subscribers
+  on(event, listener) {
+    this._emitter.on(event, listener);
+  }
+
+  off(event, listener) {
+    this._emitter.off(event, listener);
   }
 
   // Get service status
@@ -235,6 +259,11 @@ class RealtimeService {
     logger.info('🔄 Shutting down Realtime Service...');
     
     try {
+      // Unsubscribe Redis listeners
+      await this.subscriber.unsubscribe('rfid:events');
+      await this.subscriber.unsubscribe('system:events');
+      this.subscriber.removeAllListeners('message');
+
       // Close all WebSocket connections
       for (const ws of this.websocketClients) {
         if (ws.readyState === ws.OPEN) {
