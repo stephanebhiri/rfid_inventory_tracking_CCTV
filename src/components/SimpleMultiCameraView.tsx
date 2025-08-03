@@ -46,6 +46,10 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
 
   // Timeline state for smooth scrubbing
   const [timelineValue, setTimelineValue] = useState(targetTimestamp);
+  // Sync local slider quand la cible change (ex: clic d'un autre item)
+  useEffect(() => {
+    setTimelineValue(targetTimestamp);
+  }, [targetTimestamp]);
 
   // Service instance - memoized to prevent recreation on every render
   const cctvService = useMemo(() => new CCTVService(), []);
@@ -106,8 +110,8 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
         
         debugLog(`📺 Camera ${camera.id}: Video ${targetVideoIndex}/${camera.playlist.length} at ${targetTimeInVideo.toFixed(1)}s`);
         
-        // Update video src ONLY if changing clips, otherwise use currentTime
-        setTimeout(() => {
+        // Manipule le DOM vidéo au prochain frame de rendu
+        requestAnimationFrame(() => {
           const videoElement = videoRefs.current[camera.id];
           if (videoElement && camera.playlist[targetVideoIndex]) {
             const targetClip = camera.playlist[targetVideoIndex];
@@ -126,7 +130,7 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
               videoElement.currentTime = targetTimeInVideo;
             }
           }
-        }, 0);
+        });
         
         return {
           ...camera,
@@ -179,14 +183,14 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
     const cameraIds = [1, 2, 3, 4, 5, 6];
     const playlistPromises = cameraIds.map(async (cameraId) => {
       try {
-        const playlist = await buildPlaylistForCamera(cameraId, targetTimestamp);
+        const playlist = await buildPlaylistForCamera(cameraId, timestamp);
         
         // Find the video closest to target timestamp for initial position
         let currentVideoIndex = 0;
         if (playlist.length > 0) {
           let closestDiff = Infinity;
           playlist.forEach((clip, index) => {
-            const diff = Math.abs(clip.timestamp - targetTimestamp);
+            const diff = Math.abs(clip.timestamp - timestamp);
             if (diff < closestDiff) {
               closestDiff = diff;
               currentVideoIndex = index;
@@ -202,6 +206,7 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
           error: playlist.length > 0 ? null : 'No videos found'
         };
       } catch (error) {
+        onError?.(error instanceof Error ? error.message : 'Unknown error');
         return {
           id: cameraId,
           playlist: [],
@@ -220,6 +225,10 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
   useEffect(() => {
     debugLog(`🎬 Auto-loading videos on mount for smooth scrubbing`);
     loadVideos(targetTimestamp);
+    // pause toutes les vidéos au démontage
+    return () => {
+      Object.values(videoRefs.current).forEach(v => v?.pause());
+    };
   }, [loadVideos, targetTimestamp]); // Proper deps array
   
   // Manual reload function
@@ -343,8 +352,10 @@ const SimpleMultiCameraView: React.FC<SimpleMultiCameraViewProps> = ({
                   src={camera.playlist[camera.currentVideoIndex]?.url || ''}
                   muted
                   playsInline
+                  preload="metadata"
                   onLoadedData={syncVideos}
                   onError={() => {
+                    onError?.('Video load error');
                     setCameras(prev => prev.map(cam => 
                       cam.id === camera.id 
                         ? { ...cam, error: 'Video load error' }
