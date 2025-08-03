@@ -49,6 +49,9 @@ class MonitoringService {
     };
 
     this.healthCheckInterval = null;
+    this.processMonitorInterval = null;
+    this.handleUncaughtException = this.handleUncaughtException.bind(this);
+    this.handleUnhandledRejection = this.handleUnhandledRejection.bind(this);
     this.alertThresholds = {
       responseTime: 5000, // 5 seconds
       errorRate: 0.05, // 5%
@@ -73,9 +76,9 @@ class MonitoringService {
     
     // Start periodic health checks
     this.startHealthChecks();
-    
-    // Set up process monitoring
-    this.setupProcessMonitoring();
+
+    // Set up process monitoring (returns interval id)
+    this.processMonitorInterval = this.setupProcessMonitoring();
     
     logger.info('✅ Monitoring service initialized');
   }
@@ -84,9 +87,12 @@ class MonitoringService {
    * Start periodic health checks
    */
   startHealthChecks() {
-    this.healthCheckInterval = setInterval(async () => {
-      await this.performHealthCheck();
-    }, 30000); // Every 30 seconds
+    this.healthCheckInterval = setInterval(() => {
+      // fire-and-forget
+      this.performHealthCheck().catch(err => {
+        logger.error('Health check loop error:', err);
+      });
+    }, 30_000);
   }
 
   /**
@@ -405,24 +411,32 @@ class MonitoringService {
    * Setup process monitoring
    */
   setupProcessMonitoring() {
-    // Monitor uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      logger.error('💥 Uncaught Exception:', error);
-      this.createAlert('uncaught_exception', { error: error.message });
-    });
+    // Bind global error handlers
+    process.on('uncaughtException', this.handleUncaughtException);
+    process.on('unhandledRejection', this.handleUnhandledRejection);
 
-    // Monitor unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error('💥 Unhandled Promise Rejection:', reason);
-      this.createAlert('unhandled_rejection', { reason: String(reason) });
-    });
-
-    // Update system metrics periodically
-    setInterval(() => {
+    // Periodically refresh process metrics
+    return setInterval(() => {
       this.metrics.system.uptime = process.uptime();
       this.metrics.system.memory = process.memoryUsage();
       this.metrics.system.cpu = process.cpuUsage();
-    }, 10000); // Every 10 seconds
+    }, 10_000);
+  }
+
+  /**
+   * Global uncaughtException handler
+   */
+  handleUncaughtException(error) {
+    logger.error('💥 Uncaught Exception:', error);
+    this.createAlert('uncaught_exception', { error: error.message });
+  }
+
+  /**
+   * Global unhandledRejection handler
+   */
+  handleUnhandledRejection(reason) {
+    logger.error('💥 Unhandled Promise Rejection:', reason);
+    this.createAlert('unhandled_rejection', { reason: String(reason) });
   }
 
   /**
@@ -482,9 +496,16 @@ class MonitoringService {
    * Shutdown monitoring service
    */
   shutdown() {
-    if (this.healthCheckInterval) {
-      clearInterval(this.healthCheckInterval);
-    }
+    // Stop health checks
+    if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+
+    // Stop process monitoring
+    if (this.processMonitorInterval) clearInterval(this.processMonitorInterval);
+
+    // Unbind global error handlers
+    process.off('uncaughtException', this.handleUncaughtException);
+    process.off('unhandledRejection', this.handleUnhandledRejection);
+
     logger.info('📊 Monitoring service shutdown');
   }
 }
